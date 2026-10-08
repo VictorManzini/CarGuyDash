@@ -2,7 +2,7 @@
 .DS_Store
 
 # Xcode: per-user state
-xcurserdata/
+xcuserdata/
 
 # Build outputs
 build/
@@ -13,3 +13,8 @@ DerivedData/
 # Sweetpad: generated, contains a path specific to yout Mac
 buildServer.json
 
+# VS Code
+.vscode
+
+# Graphify: generated knowledge graph
+graphify-out/

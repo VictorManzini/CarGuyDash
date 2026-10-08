@@ -50,8 +50,11 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
-- `.gitignore` created; Git repository on branch `main`.
-- Temporary Bundle ID `devplaceholder.XMDPYH4G.CarGuyDash`: change before registering the App ID.
+- `.gitignore` created. Work happens on branch `bluetooth-scanner` (not merged into `main`, not pushed).
+- Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
+- Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; no OBD command sent yet.
+- Gatekeeper (`Gatekeeper.swift`) built: allowlist of 9 AT commands, service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only write path. Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.
+- Car test mode (`CarTests.swift`, branch `feature/car-test-mode`, tested in the car): works without the Mac. The log is shown on screen and saved to `Documents/log-<date>_<time>.txt` (one file per launch), with Copy and Share buttons. **Test A:** setup AT + `ATRV`, support blocks `0100`/`0120`/… while the last bit says the next block exists, then `0902`, `010C`, `015C`, `010B`, `0105`, `010D`, `0111`, `010F`, `0104`; raw response + time each. **Test B:** `010C` for 10 s, then the `010C`/`010B`/`015C`/`0105` cycle for 10 s; readings per second per PID. 10 s timeout per command. No decoding yet.
 
 ## Known pitfalls
 
@@ -62,16 +65,22 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 
 ## Next steps
 
-1. **Now:** `BluetoothScanner.swift` — class inheriting from `NSObject` and adopting `CBCentralManagerDelegate`; creates the `CBCentralManager` in `init`; `centralManagerDidUpdateState` only prints the state. Test: on the iPhone, it asks for permission and prints the state.
-2. Scanning: call `scanForPeripherals` once `.poweredOn`; list devices via `didDiscover` (name, RSSI).
-3. Check whether the initial commit tracked ignored files: `git ls-files | grep -E "xcuserdata|buildServer|DS_Store"`.
-4. PID polling + gauges on the iPhone screen.
-5. With the car: `01 00` and following blocks; oil temperature (`5C`) and manifold pressure (`0B`) [TO CONFIRM]; VIN via `09 02`; measure readings/s of the ELM327 BLE.
+1. **Done:** `BluetoothScanner.swift` — class inheriting from `NSObject` and adopting `CBCentralManagerDelegate`; creates the `CBCentralManager` in `init`; `centralManagerDidUpdateState` only prints the state. Created at launch by `@State` in `MyApp`. Tested on the iPhone: asks for permission and prints the state.
+2. **Done:** Scanning: `scanForPeripherals` once `.poweredOn`; `didDiscover` prints name and RSSI. Tested on the iPhone. RSSI `127` means "not available".
+3. **Done:** `xcuserdata` was tracked; removed from the index and the `.gitignore` typo fixed.
+4. **Done:** in-car test (ignition on, **engine off**: RPM `0`, `ATRV` 11.3 V). Results:
+   - Gatekeeper works with the real adapter; no timeouts, nothing blocked.
+   - **Two ECUs answer** most `01` requests (two `41xx` lines). `ATSP0` found the protocol on the first `0100` (310 ms).
+   - Supported PIDs, engine ECU: `01 03 04 05 06 07 0B 0C 0D 0E 0F 10 11 13 15 1C 1F 20 21 23 2E 2F 30 31 33 34 3C 40 41 42 43 44 45 46 47 49 4A 4C 51 56 5C 60`; `0160` block: `68`. Second ECU: `01 04 05 0C 0D 11 1C 20 21 30 31 40 42`.
+   - Oil temperature `5C` and manifold pressure `0B` answer (MAP 93 kPa with the engine off = atmospheric). VIN `0902` answers (multi-frame, 17 characters).
+   - Speed: `010C` alone 10.2 readings/s (~100 ms each); a 4-PID cycle gives 3.0/s per PID (~12 requests/s in total).
+   - Still to see: a real RPM with the engine running.
+5. Decode the responses, then PID polling + gauges on the iPhone screen.
 
 ## Open questions
 
-- How long without a reading counts as "N/A" (depends on the rate measured in the car).
+- How long without a reading counts as "N/A" (measured: ~12 requests/s in total, shared by all PIDs being read).
 - Whether Apple considers the Connect button on CarPlay a "setting".
 - CarPlay template item limits vs. up to 8 gauges.
-- Which exact BLE adapter; whether the N55 exposes boost pressure through a standard PID.
+- Whether the N55 exposes boost pressure through a standard PID.
 - Background BLE with a locked iPhone via `bluetooth-central` [TO CONFIRM].
