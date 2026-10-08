@@ -13,6 +13,11 @@ struct ContentView: View {
             }
             .disabled(!scanner.isReady || scanner.isTesting)
 
+            #if DEBUG
+            Button("Simulated adapter") { scanner.useSimulatedAdapter() }
+                .disabled(scanner.isReady)
+            #endif
+
             HStack {
                 Button("Copy") { UIPasteboard.general.string = scanner.log.joined(separator: "\n") }
                 ShareLink("Share", item: scanner.logFileURL)
