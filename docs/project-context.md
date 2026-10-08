@@ -63,9 +63,9 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 ## Next steps
 
 1. **Done:** `BluetoothScanner.swift` — class inheriting from `NSObject` and adopting `CBCentralManagerDelegate`; creates the `CBCentralManager` in `init`; `centralManagerDidUpdateState` only prints the state. Created at launch by `@State` in `MyApp`. Tested on the iPhone: asks for permission and prints the state.
-2. **Now:** Scanning: call `scanForPeripherals` once `.poweredOn`; list devices via `didDiscover` (name, RSSI).
-3. Check whether the initial commit tracked ignored files: `git ls-files | grep -E "xcuserdata|buildServer|DS_Store"`.
-4. PID polling + gauges on the iPhone screen.
+2. **Done:** Scanning: `scanForPeripherals` once `.poweredOn`; `didDiscover` prints name and RSSI. Tested on the iPhone. RSSI `127` means "not available".
+3. **Done:** `xcuserdata` was tracked; removed from the index and the `.gitignore` typo fixed.
+4. **Now:** PID polling + gauges on the iPhone screen.
 5. With the car: `01 00` and following blocks; oil temperature (`5C`) and manifold pressure (`0B`) [TO CONFIRM]; VIN via `09 02`; measure readings/s of the ELM327 BLE.
 
 ## Open questions
