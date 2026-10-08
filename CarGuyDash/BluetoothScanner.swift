@@ -20,14 +20,24 @@ struct BluetoothLink: AdapterLink {
     }
 }
 
+/// Where the connection to the adapter stands. The raw value is shown on screen.
+enum ConnectionState: String {
+    case bluetoothOff = "Bluetooth off"
+    case searching = "Searching"
+    case connecting = "Connecting"
+    case ready = "Ready"
+    case reconnecting = "Reconnecting"
+}
+
 /// Scans for the OBD-II adapter, connects to it, lists its services and characteristics,
 /// and sends commands through the gatekeeper. Everything is logged on screen and to a file.
 @Observable
 final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     /// Every log line of this run, shown on screen and saved to `logFileURL`.
     private(set) var log: [String] = []
-    /// True once notifications are on and the adapter can receive commands.
-    private(set) var isReady = false
+    private(set) var state = ConnectionState.bluetoothOff
+    /// True once the adapter can receive commands.
+    var isReady: Bool { state == .ready }
     /// True while a car test is running.
     var isTesting = false
     /// Latest sensor values, filled by the polling loop.
@@ -42,6 +52,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
     private var link: AdapterLink?
+    /// Set while the simulated adapter is in use; the real Bluetooth is then ignored.
+    private(set) var simulator: SimulatedAdapter?
     private var notifyCharacteristic: CBCharacteristic?
     private var responseBuffer = ""
 
@@ -67,11 +79,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     // MARK: - Central
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard simulator == nil else { return }
         switch central.state {
         case .poweredOn:
             addLog("Bluetooth: poweredOn")
+            state = .searching
             // nil = any service; each device is reported once (no duplicates by default).
             central.scanForPeripherals(withServices: nil)
+            return
         case .poweredOff: addLog("Bluetooth: poweredOff")
         case .unauthorized: addLog("Bluetooth: unauthorized")
         case .unsupported: addLog("Bluetooth: unsupported")
@@ -79,6 +94,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         case .unknown: addLog("Bluetooth: unknown")
         @unknown default: addLog("Bluetooth: new state \(central.state.rawValue)")
         }
+        state = .bluetoothOff
     }
 
     func centralManager(
@@ -93,6 +109,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         guard adapter == nil, link == nil, let name, name.contains("IOS-Vlink") else { return }
         addLog("Adapter found, connecting to \(name)")
         central.stopScan()
+        state = .connecting
         adapter = peripheral // CoreBluetooth drops the connection if nobody keeps a reference.
         peripheral.delegate = self
         central.connect(peripheral)
@@ -109,7 +126,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         addLog("Disconnected: \(error?.localizedDescription ?? "no error")")
-        isReady = false
+        state = .reconnecting
         finishCommand(with: nil)
     }
 
@@ -147,7 +164,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         if let error { addLog("Enabling notifications failed: \(error.localizedDescription)"); return }
         guard characteristic == notifyCharacteristic, characteristic.isNotifying else { return }
         addLog("Notifications on for \(characteristic.uuid)")
-        isReady = true
+        state = .ready
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
@@ -179,8 +196,9 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func useSimulatedAdapter() -> SimulatedAdapter {
         centralManager.stopScan()
         let simulated = SimulatedAdapter { [weak self] in self?.receive($0) }
+        simulator = simulated
         link = simulated
-        isReady = true
+        state = .ready
         addLog("Using the simulated adapter")
         return simulated
     }
