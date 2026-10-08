@@ -2,6 +2,24 @@ import CoreBluetooth
 import Foundation
 import Observation
 
+/// Whoever carries an approved command to the adapter: the real Bluetooth one or the simulated one.
+/// Only `BluetoothScanner.send(_:)` calls `write`, after the gatekeeper approved the command.
+/// Responses come back through `BluetoothScanner.receive(_:)`.
+protocol AdapterLink {
+    func write(_ line: String)
+}
+
+/// The real adapter, over Bluetooth.
+struct BluetoothLink: AdapterLink {
+    let peripheral: CBPeripheral
+    let characteristic: CBCharacteristic
+
+    func write(_ line: String) {
+        let type: CBCharacteristicWriteType = characteristic.properties.contains(.write) ? .withResponse : .withoutResponse
+        peripheral.writeValue(Data(line.utf8), for: characteristic, type: type)
+    }
+}
+
 /// Scans for the OBD-II adapter, connects to it, lists its services and characteristics,
 /// and sends commands through the gatekeeper. Everything is logged on screen and to a file.
 @Observable
@@ -19,7 +37,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
-    private var writeCharacteristic: CBCharacteristic?
+    private var link: AdapterLink?
     private var notifyCharacteristic: CBCharacteristic?
     private var responseBuffer = ""
 
@@ -109,7 +127,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         }
 
         // Use the first known layout found; ignore the rest.
-        guard writeCharacteristic == nil,
+        guard link == nil,
               let pair = knownPairs.first(where: { $0.service == service.uuid }),
               let notify = characteristics.first(where: { $0.uuid == pair.notify }),
               let write = characteristics.first(where: { $0.uuid == pair.write })
@@ -117,7 +135,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
         addLog("Using service \(pair.service): notify \(pair.notify), write \(pair.write)")
         notifyCharacteristic = notify
-        writeCharacteristic = write
+        link = BluetoothLink(peripheral: peripheral, characteristic: write)
         peripheral.setNotifyValue(true, for: notify)
     }
 
@@ -130,7 +148,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic == notifyCharacteristic, let data = characteristic.value else { return }
-        let chunk = String(decoding: data, as: UTF8.self)
+        receive(String(decoding: data, as: UTF8.self))
+    }
+
+    /// Collects pieces of the answer from either link until the ">" prompt.
+    func receive(_ chunk: String) {
         responseBuffer += chunk
 
         // The ELM327 ends every response with the ">" prompt.
@@ -181,13 +203,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             addLog("BLOCKED by gatekeeper: \(command.debugDescription)")
             return false
         }
-        guard let adapter, let write = writeCharacteristic, isReady else {
+        guard let link, isReady else {
             addLog("Not connected, not sent: \(command)")
             return false
         }
-        let line = Gatekeeper.normalize(command) + "\r"
-        let type: CBCharacteristicWriteType = write.properties.contains(.write) ? .withResponse : .withoutResponse
-        adapter.writeValue(Data(line.utf8), for: write, type: type)
+        link.write(Gatekeeper.normalize(command) + "\r")
         return true
     }
 
