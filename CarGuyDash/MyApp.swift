@@ -5,7 +5,9 @@ import SwiftUI
 
     var body: some Scene {
         WindowGroup {
-            ContentView(scanner: scanner)
+            NavigationStack { DashboardView(scanner: scanner) }
+                // The screen stays on only while polling.
+                .onChange(of: scanner.isPolling, initial: true) { UIApplication.shared.isIdleTimerDisabled = scanner.isPolling }
         }
     }
 }
