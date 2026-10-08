@@ -1,3 +1,5 @@
+import Foundation
+
 /// Sensors the car's engine ECU (7E8) reports as supported (service 01).
 /// Raw value = PID code. Bit-field PIDs (01, 03, 13, 1C, 41, 51) and the support blocks
 /// (20, 40, 60) are left out: they are not numbers to show on a gauge.
@@ -154,5 +156,15 @@ extension Sensor {
             return decode(bytes)
         }
         return nil
+    }
+}
+
+extension Sensor {
+    /// The value as gauge text, without the unit: volts with 1 decimal, everything else whole.
+    /// Nil (no reading) gives "N/A".
+    // ponytail: whole numbers for every other unit too; give λ and g/s decimals when they get a gauge.
+    func text(for value: Double?) -> String {
+        guard let value else { return "N/A" }
+        return String(format: unit == "V" ? "%.1f" : "%.0f", value)
     }
 }
