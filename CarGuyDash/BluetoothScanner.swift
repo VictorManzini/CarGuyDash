@@ -245,6 +245,19 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         return simulated
     }
 
+    /// Drops the simulated connection and brings it back after `downtime`, like the real adapter would.
+    func simulateDisconnect(for downtime: Duration = .seconds(3)) {
+        guard let simulator, isReady else { return }
+        addLog("Disconnected (simulated)")
+        connectionLost()
+        Task {
+            try? await Task.sleep(for: downtime)
+            addLog("Reconnected (simulated)")
+            link = simulator
+            await prepare()
+        }
+    }
+
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
     func addLog(_ line: String) {
         print(line)
