@@ -28,3 +28,35 @@ final class LiveData {
         return reading.value
     }
 }
+
+/// Polling: reads the sensors one after another, in a loop, until stopped.
+extension BluetoothScanner {
+    static let polledSensors: [Sensor] = [
+        .rpm, .oilTemp, .coolantTemp, .manifoldPressure, .intakeAirTemp, .throttlePosition, .moduleVoltage,
+    ]
+
+    var isPolling: Bool { pollingTask != nil }
+
+    func startPolling() {
+        guard pollingTask == nil else { return }
+        pollingTask = Task {
+            addLog("=== Polling started ===")
+            for command in Self.setupCommands { _ = await run(command) }
+            // Stops on Stop or when the adapter disconnects (otherwise it would spin, logging "Not connected").
+            while !Task.isCancelled && isReady {
+                for sensor in Self.polledSensors where !Task.isCancelled {
+                    // Short timeout: a sensor that does not answer must not hold up the others.
+                    let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
+                    liveData.record(result.flatMap { sensor.value(from: $0.response) }, for: sensor)
+                }
+            }
+            addLog("=== Polling stopped ===")
+            pollingTask = nil
+        }
+    }
+
+    /// Ends the loop after the command in progress (at most 1 s).
+    func stopPolling() {
+        pollingTask?.cancel()
+    }
+}
