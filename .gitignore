@@ -13,3 +13,5 @@ DerivedData/
 # Sweetpad: generated, contains a path specific to yout Mac
 buildServer.json
 
+# VS Code
+.vscode

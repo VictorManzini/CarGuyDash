@@ -51,7 +51,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
 - `.gitignore` created; Git repository on branch `main`.
-- Temporary Bundle ID `devplaceholder.XMDPYH4G.CarGuyDash`: change before registering the App ID.
+- Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
 
 ## Known pitfalls
 
@@ -62,8 +62,8 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 
 ## Next steps
 
-1. **Now:** `BluetoothScanner.swift` — class inheriting from `NSObject` and adopting `CBCentralManagerDelegate`; creates the `CBCentralManager` in `init`; `centralManagerDidUpdateState` only prints the state. Test: on the iPhone, it asks for permission and prints the state.
-2. Scanning: call `scanForPeripherals` once `.poweredOn`; list devices via `didDiscover` (name, RSSI).
+1. **Done:** `BluetoothScanner.swift` — class inheriting from `NSObject` and adopting `CBCentralManagerDelegate`; creates the `CBCentralManager` in `init`; `centralManagerDidUpdateState` only prints the state. Created at launch by `@State` in `MyApp`. Tested on the iPhone: asks for permission and prints the state.
+2. **Now:** Scanning: call `scanForPeripherals` once `.poweredOn`; list devices via `didDiscover` (name, RSSI).
 3. Check whether the initial commit tracked ignored files: `git ls-files | grep -E "xcuserdata|buildServer|DS_Store"`.
 4. PID polling + gauges on the iPhone screen.
 5. With the car: `01 00` and following blocks; oil temperature (`5C`) and manifold pressure (`0B`) [TO CONFIRM]; VIN via `09 02`; measure readings/s of the ELM327 BLE.
