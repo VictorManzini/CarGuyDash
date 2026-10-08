@@ -50,7 +50,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
-- `.gitignore` created. Work happens on branch `bluetooth-scanner` (not merged into `main`, not pushed).
+- `.gitignore` created. `bluetooth-scanner` and `feature/car-test-mode` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
 - Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; no OBD command sent yet.
 - Gatekeeper (`Gatekeeper.swift`) built: allowlist of 9 AT commands, service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only write path. Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.

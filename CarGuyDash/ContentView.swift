@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import Playgrounds
 
 /// In-car test screen: test buttons, copy/share, and the scrolling log.
 struct ContentView: View {
@@ -37,8 +36,4 @@ struct ContentView: View {
 
 #Preview {
     ContentView(scanner: BluetoothScanner())
-}
-
-#Playground {
-    _ = 1 + 2
 }
