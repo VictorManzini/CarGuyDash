@@ -5,7 +5,7 @@ import SwiftUI
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(scanner: scanner)
         }
     }
 }

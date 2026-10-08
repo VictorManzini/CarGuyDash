@@ -1,14 +1,27 @@
 import CoreBluetooth
+import Foundation
+import Observation
 
 /// Scans for the OBD-II adapter, connects to it, lists its services and characteristics,
-/// and runs a fixed command sequence through the gatekeeper, printing raw responses.
+/// and sends commands through the gatekeeper. Everything is logged on screen and to a file.
+@Observable
 final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+    /// Every log line of this run, shown on screen and saved to `logFileURL`.
+    private(set) var log: [String] = []
+    /// True once notifications are on and the adapter can receive commands.
+    private(set) var isReady = false
+    /// True while a car test is running.
+    var isTesting = false
+    /// One log file per app launch, in the app's Documents folder.
+    let logFileURL: URL
+    @ObservationIgnored private var logFile: FileHandle?
+    @ObservationIgnored private var pendingResponse: CheckedContinuation<String?, Never>?
+
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var notifyCharacteristic: CBCharacteristic?
     private var responseBuffer = ""
-    private var sentAt: ContinuousClock.Instant?
 
     // Known ELM327 BLE layouts: (service, notify characteristic, write characteristic).
     private let knownPairs: [(service: CBUUID, notify: CBUUID, write: CBUUID)] = [
@@ -17,13 +30,13 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         (CBUUID(string: "FFE0"), CBUUID(string: "FFE1"), CBUUID(string: "FFE1")),
     ]
 
-    // ponytail: fixed test sequence, raw responses only (no decoding yet).
-    private var pendingCommands = [
-        "ATZ", "ATE0", "ATL0", "ATS0", "ATSP0",
-        "0100", "0120", "0140", "010C", "015C", "010B", "0902",
-    ]
-
     override init() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        logFileURL = URL.documentsDirectory.appending(path: "log-\(formatter.string(from: .now)).txt")
+        FileManager.default.createFile(atPath: logFileURL.path(), contents: nil)
+        logFile = try? FileHandle(forWritingTo: logFileURL)
         super.init()
         // queue: nil delivers delegate callbacks on the main queue.
         centralManager = CBCentralManager(delegate: self, queue: nil)
@@ -34,15 +47,15 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
-            print("Bluetooth: poweredOn")
+            addLog("Bluetooth: poweredOn")
             // nil = any service; each device is reported once (no duplicates by default).
             central.scanForPeripherals(withServices: nil)
-        case .poweredOff: print("Bluetooth: poweredOff")
-        case .unauthorized: print("Bluetooth: unauthorized")
-        case .unsupported: print("Bluetooth: unsupported")
-        case .resetting: print("Bluetooth: resetting")
-        case .unknown: print("Bluetooth: unknown")
-        @unknown default: print("Bluetooth: new state \(central.state.rawValue)")
+        case .poweredOff: addLog("Bluetooth: poweredOff")
+        case .unauthorized: addLog("Bluetooth: unauthorized")
+        case .unsupported: addLog("Bluetooth: unsupported")
+        case .resetting: addLog("Bluetooth: resetting")
+        case .unknown: addLog("Bluetooth: unknown")
+        @unknown default: addLog("Bluetooth: new state \(central.state.rawValue)")
         }
     }
 
@@ -53,10 +66,10 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         rssi RSSI: NSNumber
     ) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        print("Found: \(name ?? "(no name)") RSSI: \(RSSI) dBm")
+        addLog("Found: \(name ?? "(no name)") RSSI: \(RSSI) dBm")
 
         guard adapter == nil, let name, name.contains("IOS-Vlink") else { return }
-        print("Adapter found, connecting to \(name)")
+        addLog("Adapter found, connecting to \(name)")
         central.stopScan()
         adapter = peripheral // CoreBluetooth drops the connection if nobody keeps a reference.
         peripheral.delegate = self
@@ -64,33 +77,35 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        print("Connected to \(peripheral.name ?? "adapter")")
+        addLog("Connected to \(peripheral.name ?? "adapter")")
         peripheral.discoverServices(nil)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        print("Failed to connect: \(error?.localizedDescription ?? "unknown error")")
+        addLog("Failed to connect: \(error?.localizedDescription ?? "unknown error")")
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        print("Disconnected: \(error?.localizedDescription ?? "no error")")
+        addLog("Disconnected: \(error?.localizedDescription ?? "no error")")
+        isReady = false
+        finishCommand(with: nil)
     }
 
     // MARK: - Peripheral
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        if let error { print("Service discovery failed: \(error.localizedDescription)"); return }
+        if let error { addLog("Service discovery failed: \(error.localizedDescription)"); return }
         for service in peripheral.services ?? [] {
-            print("Service \(service.uuid)")
+            addLog("Service \(service.uuid)")
             peripheral.discoverCharacteristics(nil, for: service)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        if let error { print("Characteristic discovery failed: \(error.localizedDescription)"); return }
+        if let error { addLog("Characteristic discovery failed: \(error.localizedDescription)"); return }
         let characteristics = service.characteristics ?? []
         for characteristic in characteristics {
-            print("  Characteristic \(characteristic.uuid) in \(service.uuid): \(describe(characteristic.properties))")
+            addLog("  Characteristic \(characteristic.uuid) in \(service.uuid): \(describe(characteristic.properties))")
         }
 
         // Use the first known layout found; ignore the rest.
@@ -100,17 +115,17 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
               let write = characteristics.first(where: { $0.uuid == pair.write })
         else { return }
 
-        print("Using service \(pair.service): notify \(pair.notify), write \(pair.write)")
+        addLog("Using service \(pair.service): notify \(pair.notify), write \(pair.write)")
         notifyCharacteristic = notify
         writeCharacteristic = write
         peripheral.setNotifyValue(true, for: notify)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        if let error { print("Enabling notifications failed: \(error.localizedDescription)"); return }
+        if let error { addLog("Enabling notifications failed: \(error.localizedDescription)"); return }
         guard characteristic == notifyCharacteristic, characteristic.isNotifying else { return }
-        print("Notifications on for \(characteristic.uuid)")
-        sendNextCommand()
+        addLog("Notifications on for \(characteristic.uuid)")
+        isReady = true
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
@@ -120,35 +135,60 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
         // The ELM327 ends every response with the ">" prompt.
         guard responseBuffer.contains(">") else { return }
-        let elapsed = sentAt.map { Int((ContinuousClock.now - $0) / .milliseconds(1)) } ?? -1
-        print("RX (\(elapsed) ms): \(responseBuffer.debugDescription)")
+        let response = responseBuffer
         responseBuffer = ""
-        sendNextCommand()
+        if pendingResponse == nil { addLog("Late response (ignored): \(response.debugDescription)") }
+        finishCommand(with: response)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-        if let error { print("Write failed: \(error.localizedDescription)") }
+        if let error { addLog("Write failed: \(error.localizedDescription)") }
     }
 
     // MARK: - Helpers
 
-    private func sendNextCommand() {
-        guard !pendingCommands.isEmpty else { print("Test sequence finished"); return }
-        send(pendingCommands.removeFirst())
+    /// Appends a line to the screen log and the log file (and the console, for SweetPad).
+    func addLog(_ line: String) {
+        print(line)
+        log.append(line)
+        logFile?.write(Data((line + "\n").utf8))
+    }
+
+    /// Sends one command and waits for the ">" prompt.
+    /// Returns the raw response and the time in ms; nil if blocked, not ready or timed out.
+    func run(_ command: String, timeout: Duration = .seconds(10)) async -> (response: String, ms: Int)? {
+        guard pendingResponse == nil else { addLog("Busy, not sent: \(command)"); return nil }
+        guard send(command) else { return nil }
+        let start = ContinuousClock.now
+        let timeoutTask = Task {
+            try? await Task.sleep(for: timeout)
+            if !Task.isCancelled { finishCommand(with: nil) }
+        }
+        let response = await withCheckedContinuation { pendingResponse = $0 }
+        timeoutTask.cancel()
+        guard let response else { addLog("TIMEOUT or disconnected: \(command)"); return nil }
+        return (response, Int((ContinuousClock.now - start) / .milliseconds(1)))
+    }
+
+    private func finishCommand(with response: String?) {
+        pendingResponse?.resume(returning: response)
+        pendingResponse = nil
     }
 
     /// The only place that writes to the adapter. Every command passes the gatekeeper first.
-    private func send(_ command: String) {
+    private func send(_ command: String) -> Bool {
         guard Gatekeeper.check(command) == .allowed else {
-            print("BLOCKED by gatekeeper: \(command.debugDescription)")
-            return
+            addLog("BLOCKED by gatekeeper: \(command.debugDescription)")
+            return false
         }
-        guard let adapter, let write = writeCharacteristic else { return }
+        guard let adapter, let write = writeCharacteristic, isReady else {
+            addLog("Not connected, not sent: \(command)")
+            return false
+        }
         let line = Gatekeeper.normalize(command) + "\r"
         let type: CBCharacteristicWriteType = write.properties.contains(.write) ? .withResponse : .withoutResponse
-        print("TX: \(line.debugDescription)")
-        sentAt = .now
         adapter.writeValue(Data(line.utf8), for: write, type: type)
+        return true
     }
 
     private func describe(_ properties: CBCharacteristicProperties) -> String {
