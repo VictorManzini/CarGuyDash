@@ -52,6 +52,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
 - `.gitignore` created; Git repository on branch `main`.
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
+- Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; no OBD command sent yet.
 
 ## Known pitfalls
 
@@ -73,5 +74,5 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - How long without a reading counts as "N/A" (depends on the rate measured in the car).
 - Whether Apple considers the Connect button on CarPlay a "setting".
 - CarPlay template item limits vs. up to 8 gauges.
-- Which exact BLE adapter; whether the N55 exposes boost pressure through a standard PID.
+- Whether the N55 exposes boost pressure through a standard PID.
 - Background BLE with a locked iPhone via `bluetooth-central` [TO CONFIRM].

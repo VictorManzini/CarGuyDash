@@ -1,14 +1,31 @@
 import CoreBluetooth
 
-/// Owns the Bluetooth central manager. For now it only reports the Bluetooth state.
-final class BluetoothScanner: NSObject, CBCentralManagerDelegate {
+/// Scans for the OBD-II adapter, connects to it, lists its services and characteristics,
+/// and sends two fixed AT commands as a smoke test.
+final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var centralManager: CBCentralManager!
+    private var adapter: CBPeripheral?
+    private var writeCharacteristic: CBCharacteristic?
+    private var notifyCharacteristic: CBCharacteristic?
+    private var responseBuffer = ""
+
+    // Known ELM327 BLE layouts: (service, notify characteristic, write characteristic).
+    private let knownPairs: [(service: CBUUID, notify: CBUUID, write: CBUUID)] = [
+        (CBUUID(string: "FFF0"), CBUUID(string: "FFF1"), CBUUID(string: "FFF2")),
+        (CBUUID(string: "18F0"), CBUUID(string: "2AF0"), CBUUID(string: "2AF1")),
+        (CBUUID(string: "FFE0"), CBUUID(string: "FFE1"), CBUUID(string: "FFE1")),
+    ]
+
+    // ponytail: fixed AT smoke test only. OBD commands must go through the gatekeeper (not built yet).
+    private var pendingCommands = ["ATZ\r", "ATI\r"]
 
     override init() {
         super.init()
         // queue: nil delivers delegate callbacks on the main queue.
         centralManager = CBCentralManager(delegate: self, queue: nil)
     }
+
+    // MARK: - Central
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
@@ -31,6 +48,101 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        print("Found: \(peripheral.name ?? "(no name)") RSSI: \(RSSI) dBm")
+        let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        print("Found: \(name ?? "(no name)") RSSI: \(RSSI) dBm")
+
+        guard adapter == nil, let name, name.contains("IOS-Vlink") else { return }
+        print("Adapter found, connecting to \(name)")
+        central.stopScan()
+        adapter = peripheral // CoreBluetooth drops the connection if nobody keeps a reference.
+        peripheral.delegate = self
+        central.connect(peripheral)
+    }
+
+    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        print("Connected to \(peripheral.name ?? "adapter")")
+        peripheral.discoverServices(nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        print("Failed to connect: \(error?.localizedDescription ?? "unknown error")")
+    }
+
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        print("Disconnected: \(error?.localizedDescription ?? "no error")")
+    }
+
+    // MARK: - Peripheral
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        if let error { print("Service discovery failed: \(error.localizedDescription)"); return }
+        for service in peripheral.services ?? [] {
+            print("Service \(service.uuid)")
+            peripheral.discoverCharacteristics(nil, for: service)
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        if let error { print("Characteristic discovery failed: \(error.localizedDescription)"); return }
+        let characteristics = service.characteristics ?? []
+        for characteristic in characteristics {
+            print("  Characteristic \(characteristic.uuid) in \(service.uuid): \(describe(characteristic.properties))")
+        }
+
+        // Use the first known layout found; ignore the rest.
+        guard writeCharacteristic == nil,
+              let pair = knownPairs.first(where: { $0.service == service.uuid }),
+              let notify = characteristics.first(where: { $0.uuid == pair.notify }),
+              let write = characteristics.first(where: { $0.uuid == pair.write })
+        else { return }
+
+        print("Using service \(pair.service): notify \(pair.notify), write \(pair.write)")
+        notifyCharacteristic = notify
+        writeCharacteristic = write
+        peripheral.setNotifyValue(true, for: notify)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        if let error { print("Enabling notifications failed: \(error.localizedDescription)"); return }
+        guard characteristic == notifyCharacteristic, characteristic.isNotifying else { return }
+        print("Notifications on for \(characteristic.uuid)")
+        sendNextCommand()
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard characteristic == notifyCharacteristic, let data = characteristic.value else { return }
+        let chunk = String(decoding: data, as: UTF8.self)
+        print("RX chunk: \(chunk.debugDescription)")
+        responseBuffer += chunk
+
+        // The ELM327 ends every response with the ">" prompt.
+        guard responseBuffer.contains(">") else { return }
+        print("Response:\n\(responseBuffer.replacingOccurrences(of: "\r", with: "\n"))")
+        responseBuffer = ""
+        sendNextCommand()
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error { print("Write failed: \(error.localizedDescription)") }
+    }
+
+    // MARK: - Helpers
+
+    private func sendNextCommand() {
+        guard !pendingCommands.isEmpty else { print("AT test finished"); return }
+        guard let adapter, let write = writeCharacteristic else { return }
+        let command = pendingCommands.removeFirst()
+        let type: CBCharacteristicWriteType = write.properties.contains(.write) ? .withResponse : .withoutResponse
+        print("TX: \(command.debugDescription)")
+        adapter.writeValue(Data(command.utf8), for: write, type: type)
+    }
+
+    private func describe(_ properties: CBCharacteristicProperties) -> String {
+        let names: [(CBCharacteristicProperties, String)] = [
+            (.read, "read"), (.write, "write"),
+            (.writeWithoutResponse, "writeWithoutResponse"), (.notify, "notify"),
+        ]
+        let found = names.filter { properties.contains($0.0) }.map(\.1)
+        return found.isEmpty ? "(none of read/write/notify)" : found.joined(separator: ", ")
     }
 }
