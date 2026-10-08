@@ -4,8 +4,8 @@ import Testing
 
 struct GatekeeperTests {
     @Test(arguments: [
-        "ATZ", "ATI", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP0", "ATDP", "ATRV",
-        "atz", "at sp0",
+        "ATZ", "ATI", "ATE0", "ATL0", "ATS0", "ATH0", "ATH1", "ATSP0", "ATDP", "ATRV",
+        "atz", "at sp0", "ath1", "AT H1",
         "0100", "010C", "01 0C", "01 0c", "015C", "010B", "01FF",
         "0902", "09 02",
     ])
@@ -31,7 +31,7 @@ struct GatekeeperTests {
     @Test(arguments: [
         "", " ", "01", "010", "01000", "010G", "01 0C 0D", "0103 04",
         "02 0C", "03", "07", "0A", "0902 01", "09 0A", "22 F1 90", "2E F1 90 00",
-        "ATMA", "ATWS", "ATD", "ATSP6", "ATZ\r04", "010C\r04", "ATZ\n", "AT", "STP 33",
+        "ATMA", "ATWS", "ATD", "ATSP6", "ATH2", "ATH", "ATZ\r04", "010C\r04", "ATZ\n", "AT", "STP 33",
         "０１０Ｃ", // fullwidth characters
     ])
     func otherCommandsAreBlocked(_ command: String) {

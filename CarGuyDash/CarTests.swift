@@ -2,7 +2,8 @@ import Foundation
 
 /// In-car test mode: fixed command sequences sent through `run`, which uses the gatekeeper.
 extension BluetoothScanner {
-    static let setupCommands = ["ATZ", "ATE0", "ATL0", "ATS0", "ATSP0"]
+    /// ATH1 turns headers on, so each answer shows which ECU sent it (7E8 = engine).
+    static let setupCommands = ["ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATSP0"]
 
     /// Setup + battery voltage, the supported-PID blocks, then a fixed list of PIDs.
     /// Logs each raw response and its time.
@@ -75,11 +76,13 @@ extension BluetoothScanner {
     }
 
     /// Lines of the response that are a positive answer to `command` ("010C" -> lines starting with "410C").
+    /// With headers on, the header and length byte ("7E804") are removed first.
     nonisolated static func dataLines(_ response: String, for command: String) -> [String] {
         let expected = "4" + command.dropFirst()
         return response
             .split(whereSeparator: { $0 == "\r" || $0 == "\n" || $0 == ">" })
             .map { $0.filter { $0 != " " } }
+            .map { $0.hasPrefix("7E") && $0.count > 5 ? String($0.dropFirst(5)) : $0 }
             .filter { $0.hasPrefix(expected) }
     }
 }
