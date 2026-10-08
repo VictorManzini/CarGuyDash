@@ -2,7 +2,7 @@
 .DS_Store
 
 # Xcode: per-user state
-xcurserdata/
+xcuserdata/
 
 # Build outputs
 build/
