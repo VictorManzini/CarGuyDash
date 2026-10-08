@@ -131,3 +131,28 @@ nonisolated enum Sensor: String, CaseIterable {
         }
     }
 }
+
+extension Sensor {
+    /// Value from the adapter's raw response, taken only from the engine ECU (header 7E8).
+    /// Needs headers on (ATH1). Answers from other ECUs (7E9...), "NO DATA", "UNABLE TO CONNECT"
+    /// or an empty response give nil.
+    func value(from response: String) -> Double? {
+        let expected = "41" + rawValue
+        for line in response.uppercased().split(whereSeparator: { $0 == "\r" || $0 == "\n" || $0 == ">" }) {
+            let line = line.filter { $0 != " " }
+            // "7E8" header + 2-digit length byte, then the answer: "7E804410C1AF8" -> "410C1AF8".
+            guard line.hasPrefix("7E8") else { continue }
+            let answer = line.dropFirst(5)
+            guard answer.hasPrefix(expected) else { continue }
+            let hex = Array(answer.dropFirst(expected.count))
+            guard hex.count.isMultiple(of: 2) else { return nil }
+            var bytes: [UInt8] = []
+            for i in stride(from: 0, to: hex.count, by: 2) {
+                guard let byte = UInt8(String(hex[i...i + 1]), radix: 16) else { return nil }
+                bytes.append(byte)
+            }
+            return decode(bytes)
+        }
+        return nil
+    }
+}
