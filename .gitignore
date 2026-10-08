@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Xcode: per-user state
+xcurserdata/
+
+# Build outputs
+build/
+DerivedData/
+*ipa
+*dYSM.zip
+
+# Sweetpad: generated, contains a path specific to yout Mac
+buildServer.json
+
