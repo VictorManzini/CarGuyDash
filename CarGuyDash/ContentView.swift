@@ -33,8 +33,8 @@ struct ContentView: View {
             #endif
 
             #if DEBUG
-            Button("Simulated adapter") { scanner.useSimulatedAdapter() }
-                .disabled(scanner.isReady)
+            Button("Simulated adapter") { Task { await scanner.useSimulatedAdapter() } }
+                .disabled(scanner.state != .searching && scanner.state != .bluetoothOff)
             #endif
 
             HStack {

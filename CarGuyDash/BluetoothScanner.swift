@@ -83,6 +83,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         switch central.state {
         case .poweredOn:
             addLog("Bluetooth: poweredOn")
+            // Bluetooth came back: only the same adapter, found by the iPhone's identifier for it.
+            if let known = adapter, let peripheral = central.retrievePeripherals(withIdentifiers: [known.identifier]).first {
+                state = .reconnecting
+                adapter = peripheral
+                peripheral.delegate = self
+                central.connect(peripheral)
+                return
+            }
             state = .searching
             // nil = any service; each device is reported once (no duplicates by default).
             central.scanForPeripherals(withServices: nil)
@@ -94,6 +102,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         case .unknown: addLog("Bluetooth: unknown")
         @unknown default: addLog("Bluetooth: new state \(central.state.rawValue)")
         }
+        connectionLost()
         state = .bluetoothOff
     }
 
@@ -106,7 +115,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
         addLog("Found: \(name ?? "(no name)") RSSI: \(RSSI) dBm")
 
-        guard adapter == nil, link == nil, let name, name.contains("IOS-Vlink") else { return }
+        guard adapter == nil, simulator == nil, let name, name.contains("IOS-Vlink") else { return }
         addLog("Adapter found, connecting to \(name)")
         central.stopScan()
         state = .connecting
@@ -122,12 +131,13 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         addLog("Failed to connect: \(error?.localizedDescription ?? "unknown error")")
+        reconnect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         addLog("Disconnected: \(error?.localizedDescription ?? "no error")")
-        state = .reconnecting
-        finishCommand(with: nil)
+        connectionLost()
+        reconnect(peripheral)
     }
 
     // MARK: - Peripheral
@@ -164,7 +174,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         if let error { addLog("Enabling notifications failed: \(error.localizedDescription)"); return }
         guard characteristic == notifyCharacteristic, characteristic.isNotifying else { return }
         addLog("Notifications on for \(characteristic.uuid)")
-        state = .ready
+        Task { await prepare() }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
@@ -188,18 +198,50 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         if let error { addLog("Write failed: \(error.localizedDescription)") }
     }
 
+    // MARK: - Connection
+
+    /// The link is gone: forget it, drop the command in progress, every value becomes N/A.
+    private func connectionLost() {
+        link = nil
+        notifyCharacteristic = nil
+        responseBuffer = ""
+        finishCommand(with: nil)
+        liveData.clear()
+        state = .reconnecting
+    }
+
+    /// Asks CoreBluetooth to connect to the same adapter again. A pending connect never times out,
+    /// so this keeps trying for as long as it takes.
+    private func reconnect(_ peripheral: CBPeripheral) {
+        guard peripheral == adapter, centralManager.state == .poweredOn else { return }
+        addLog("Reconnecting to \(peripheral.name ?? "adapter")")
+        centralManager.connect(peripheral)
+    }
+
+    /// Runs the setup commands (with ATH1) on every new connection, then marks it ready.
+    /// Polling, if on, picks up again by itself once the state is ready.
+    private func prepare() async {
+        for command in Self.setupCommands {
+            _ = await run(command)
+            guard link != nil else { return } // dropped again during setup
+        }
+        state = .ready
+        addLog("Ready")
+    }
+
     // MARK: - Helpers
 
     /// Stops looking for the real adapter and talks to the simulated one instead.
     /// Returns it so tests can see what it received.
     @discardableResult
-    func useSimulatedAdapter() -> SimulatedAdapter {
+    func useSimulatedAdapter() async -> SimulatedAdapter {
         centralManager.stopScan()
         let simulated = SimulatedAdapter { [weak self] in self?.receive($0) }
         simulator = simulated
         link = simulated
-        state = .ready
+        state = .connecting
         addLog("Using the simulated adapter")
+        await prepare()
         return simulated
     }
 
@@ -237,7 +279,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             addLog("BLOCKED by gatekeeper: \(command.debugDescription)")
             return false
         }
-        guard let link, isReady else {
+        guard let link else {
             addLog("Not connected, not sent: \(command)")
             return false
         }

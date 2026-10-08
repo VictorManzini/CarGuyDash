@@ -26,7 +26,7 @@ struct LiveDataTests {
     /// Polls the simulated adapter until `done` is true or 5 s pass.
     private func poll(noDataChance: Double, until done: (BluetoothScanner, SimulatedAdapter) -> Bool) async throws -> BluetoothScanner {
         let scanner = BluetoothScanner()
-        let simulated = scanner.useSimulatedAdapter()
+        let simulated = await scanner.useSimulatedAdapter()
         simulated.noDataChance = noDataChance
         scanner.startPolling()
         let start = ContinuousClock.now
