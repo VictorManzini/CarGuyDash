@@ -50,10 +50,11 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
-- `.gitignore` created; Git repository on branch `main`.
+- `.gitignore` created. Work happens on branch `bluetooth-scanner` (not merged into `main`, not pushed).
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
 - Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; no OBD command sent yet.
-- Gatekeeper (`Gatekeeper.swift`) built: allowlist of 9 AT commands, service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only write path. Unit tests (`CarGuyDashTests`) pass on the simulator. [TO CONFIRM] `ATZ`/`ATI` through the gatekeeper on the iPhone with the adapter.
+- Gatekeeper (`Gatekeeper.swift`) built: allowlist of 9 AT commands, service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only write path. Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.
+- Test sequence in `BluetoothScanner` (untested in the car): on connect, sends through the gatekeeper `ATZ`, `ATE0`, `ATL0`, `ATS0`, `ATSP0`, then `0100`, `0120`, `0140`, `010C`, `015C`, `010B`, `0902`; prints each raw response and the time from send to `>`. No decoding yet.
 
 ## Known pitfalls
 
@@ -67,8 +68,8 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 1. **Done:** `BluetoothScanner.swift` — class inheriting from `NSObject` and adopting `CBCentralManagerDelegate`; creates the `CBCentralManager` in `init`; `centralManagerDidUpdateState` only prints the state. Created at launch by `@State` in `MyApp`. Tested on the iPhone: asks for permission and prints the state.
 2. **Done:** Scanning: `scanForPeripherals` once `.poweredOn`; `didDiscover` prints name and RSSI. Tested on the iPhone. RSSI `127` means "not available".
 3. **Done:** `xcuserdata` was tracked; removed from the index and the `.gitignore` typo fixed.
-4. **Now:** PID polling + gauges on the iPhone screen.
-5. With the car: `01 00` and following blocks; oil temperature (`5C`) and manifold pressure (`0B`) [TO CONFIRM]; VIN via `09 02`; measure readings/s of the ELM327 BLE.
+4. **Now:** test mode in the car: run the test sequence on the iPhone with the adapter plugged in and the ignition on (engine running for a real RPM), and paste the log. It confirms the gatekeeper with the real adapter, the supported PIDs (`0100`/`0120`/`0140`), whether oil temperature (`5C`) and manifold pressure (`0B`) answer, the VIN (`0902`), and the response time per command. Then commit the result.
+5. Decode the responses, then PID polling + gauges on the iPhone screen.
 
 ## Open questions
 

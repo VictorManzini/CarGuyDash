@@ -1,13 +1,14 @@
 import CoreBluetooth
 
 /// Scans for the OBD-II adapter, connects to it, lists its services and characteristics,
-/// and sends two fixed AT commands as a smoke test.
+/// and runs a fixed command sequence through the gatekeeper, printing raw responses.
 final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var notifyCharacteristic: CBCharacteristic?
     private var responseBuffer = ""
+    private var sentAt: ContinuousClock.Instant?
 
     // Known ELM327 BLE layouts: (service, notify characteristic, write characteristic).
     private let knownPairs: [(service: CBUUID, notify: CBUUID, write: CBUUID)] = [
@@ -16,8 +17,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         (CBUUID(string: "FFE0"), CBUUID(string: "FFE1"), CBUUID(string: "FFE1")),
     ]
 
-    // ponytail: fixed AT smoke test only.
-    private var pendingCommands = ["ATZ", "ATI"]
+    // ponytail: fixed test sequence, raw responses only (no decoding yet).
+    private var pendingCommands = [
+        "ATZ", "ATE0", "ATL0", "ATS0", "ATSP0",
+        "0100", "0120", "0140", "010C", "015C", "010B", "0902",
+    ]
 
     override init() {
         super.init()
@@ -112,12 +116,12 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic == notifyCharacteristic, let data = characteristic.value else { return }
         let chunk = String(decoding: data, as: UTF8.self)
-        print("RX chunk: \(chunk.debugDescription)")
         responseBuffer += chunk
 
         // The ELM327 ends every response with the ">" prompt.
         guard responseBuffer.contains(">") else { return }
-        print("Response:\n\(responseBuffer.replacingOccurrences(of: "\r", with: "\n"))")
+        let elapsed = sentAt.map { Int((ContinuousClock.now - $0) / .milliseconds(1)) } ?? -1
+        print("RX (\(elapsed) ms): \(responseBuffer.debugDescription)")
         responseBuffer = ""
         sendNextCommand()
     }
@@ -129,7 +133,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     // MARK: - Helpers
 
     private func sendNextCommand() {
-        guard !pendingCommands.isEmpty else { print("AT test finished"); return }
+        guard !pendingCommands.isEmpty else { print("Test sequence finished"); return }
         send(pendingCommands.removeFirst())
     }
 
@@ -143,6 +147,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         let line = Gatekeeper.normalize(command) + "\r"
         let type: CBCharacteristicWriteType = write.properties.contains(.write) ? .withResponse : .withoutResponse
         print("TX: \(line.debugDescription)")
+        sentAt = .now
         adapter.writeValue(Data(line.utf8), for: write, type: type)
     }
 
