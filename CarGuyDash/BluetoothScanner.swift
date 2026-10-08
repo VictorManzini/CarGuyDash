@@ -86,7 +86,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
         addLog("Found: \(name ?? "(no name)") RSSI: \(RSSI) dBm")
 
-        guard adapter == nil, let name, name.contains("IOS-Vlink") else { return }
+        guard adapter == nil, link == nil, let name, name.contains("IOS-Vlink") else { return }
         addLog("Adapter found, connecting to \(name)")
         central.stopScan()
         adapter = peripheral // CoreBluetooth drops the connection if nobody keeps a reference.
@@ -168,6 +168,18 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     // MARK: - Helpers
+
+    /// Stops looking for the real adapter and talks to the simulated one instead.
+    /// Returns it so tests can see what it received.
+    @discardableResult
+    func useSimulatedAdapter() -> SimulatedAdapter {
+        centralManager.stopScan()
+        let simulated = SimulatedAdapter { [weak self] in self?.receive($0) }
+        link = simulated
+        isReady = true
+        addLog("Using the simulated adapter")
+        return simulated
+    }
 
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
     func addLog(_ line: String) {
