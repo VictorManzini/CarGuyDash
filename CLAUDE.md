@@ -11,3 +11,13 @@ Full context: `docs/project-context.md`. Read it before starting any task.
 - The owner has never programmed in Swift: explain every change **in Brazilian Portuguese**, in simple terms, with an analogy when it helps.
 - One small request at a time. Do not implement anything beyond what was asked.
 - Bluetooth only works on a physical iPhone (run via SweetPad); the simulator has no Bluetooth.
+
+## Git workflow
+
+- `main` always works. Never commit directly to `main`.
+- One branch per task: `feature/<short-name>`, created from `main`.
+- Commit after each step that builds and passes the tests. Message in English, imperative mood.
+- Code that depends on the car and has not been tested in it yet: commit with "Untested in car" in the message body.
+- Merge into `main` (with `--no-ff`) only after the in-car test passes and the owner approves.
+- Never push, force, rebase or delete a branch without asking the owner.
+- At the start of each task, tell the owner which branch we are on and which one will be created.
