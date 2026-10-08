@@ -16,8 +16,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         (CBUUID(string: "FFE0"), CBUUID(string: "FFE1"), CBUUID(string: "FFE1")),
     ]
 
-    // ponytail: fixed AT smoke test only. OBD commands must go through the gatekeeper (not built yet).
-    private var pendingCommands = ["ATZ\r", "ATI\r"]
+    // ponytail: fixed AT smoke test only.
+    private var pendingCommands = ["ATZ", "ATI"]
 
     override init() {
         super.init()
@@ -130,11 +130,20 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     private func sendNextCommand() {
         guard !pendingCommands.isEmpty else { print("AT test finished"); return }
+        send(pendingCommands.removeFirst())
+    }
+
+    /// The only place that writes to the adapter. Every command passes the gatekeeper first.
+    private func send(_ command: String) {
+        guard Gatekeeper.check(command) == .allowed else {
+            print("BLOCKED by gatekeeper: \(command.debugDescription)")
+            return
+        }
         guard let adapter, let write = writeCharacteristic else { return }
-        let command = pendingCommands.removeFirst()
+        let line = Gatekeeper.normalize(command) + "\r"
         let type: CBCharacteristicWriteType = write.properties.contains(.write) ? .withResponse : .withoutResponse
-        print("TX: \(command.debugDescription)")
-        adapter.writeValue(Data(command.utf8), for: write, type: type)
+        print("TX: \(line.debugDescription)")
+        adapter.writeValue(Data(line.utf8), for: write, type: type)
     }
 
     private func describe(_ properties: CBCharacteristicProperties) -> String {
