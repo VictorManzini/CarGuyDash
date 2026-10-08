@@ -15,3 +15,6 @@ buildServer.json
 
 # VS Code
 .vscode
+
+# Graphify: generated knowledge graph
+graphify-out/
