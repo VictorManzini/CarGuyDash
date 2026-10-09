@@ -1,5 +1,7 @@
 # Car Guy Dash — Project Context
 
+Roadmap (phases and what is done): `docs/roadmap.md`.
+
 A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM327 **BLE** OBD-II adapter and shows real-time gauges on the iPhone and in a CarPlay app, updating even while the iPhone is locked. Open source repository.
 
 ## How we work
@@ -50,7 +52,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
-- `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data` and `feature/gauges` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
+- `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data`, `feature/gauges` and `feature/reconnect` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
 - Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; OBD reading tested in the car (see Next steps 4 and 6).
 - Gatekeeper (`Gatekeeper.swift`) built: allowlist of 10 AT commands (`ATH1` added for headers), service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only path to the adapter: it checks the gatekeeper, then hands the line to the active `AdapterLink` (real or simulated). Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.
@@ -88,7 +90,7 @@ Stacked, each created from the previous one (approved exception to "branch from 
 
 `feature/sensors` → `feature/fake-adapter` → `feature/live-data` → `feature/gauges` → `feature/reconnect`
 
-The first four passed the in-car test and are merged into `main` (each with `--no-ff`). `feature/reconnect` is up to date with `main` and **waits for its own in-car test** (drop and reconnection).
+All five are merged into `main` (each with `--no-ff`). The first four passed the in-car test. `feature/reconnect` was merged on the owner's request (merge `37dc070`), but reconnection is **still untested in the car** (drop and reconnection).
 
 - **`feature/sensors`:** `Sensor` enum with the PIDs the engine ECU supports (name, unit, formula). Decodes only the engine's answer (header `7E8`, needs `ATH1`); tested with the real responses from the car log.
 - **`feature/fake-adapter`:** `AdapterLink` protocol with two versions: `BluetoothLink` (real, the only `writeValue(`) and `SimulatedAdapter` (answers like the car: `7E9` + `7E8` lines with the logged bytes, RPM 750–3000, ~100 ms, occasional `NO DATA`). The gatekeeper stays in front of both. Debug-only "Simulated adapter" button.
