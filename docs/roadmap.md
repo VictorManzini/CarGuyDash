@@ -13,7 +13,7 @@
 - [x] Connect / Disconnect buttons; no automatic reconnection after Disconnect
 - [x] "Stand By" on every gauge while reconnecting (instead of "N/A")
 - [x] Car profile: read the VIN; new car → ask make and model
-- [ ] Discover supported sensors on every connection
+- [x] Discover supported sensors on every connection
 - [ ] 🚗 Test: reconnection (ignition off/on), Disconnect, Stand By
 
 ## Phase 3 — iPhone screens
