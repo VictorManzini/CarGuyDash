@@ -50,7 +50,7 @@ struct GatekeeperTests {
     }
 
     /// No other path may write to the adapter: `writeValue(` must appear exactly once in the app,
-    /// inside BluetoothScanner.send(_:), right after the gatekeeper check.
+    /// inside BluetoothLink, which only BluetoothScanner.send(_:) calls after the gatekeeper check.
     @Test func onlyOneWritePathExists() throws {
         let appFolder = URL(filePath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
