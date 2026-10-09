@@ -29,7 +29,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 ## Screens
 
 - **Home page:** one button per page + a Connect button (becomes Disconnect once connected).
-- **Gauges:** 1 to 8, count and design chosen by the user, individual design per gauge. Portrait and landscape. Design not defined yet.
+- **Gauges:** 1 to 6, count and design chosen by the user, individual design per gauge. Portrait and landscape. Design not defined yet.
 - **Gauge editing:** separate page (avoids accidental taps while driving). Sets count, design, sensor and redline for each gauge. When disconnected, shows every sensor in the enum; a sensor the car does not support shows "N/A".
 - **Sensors:** all sensors with fast readings, Car Scanner style. Reads all PIDs while open. Not shown on CarPlay.
 - **Settings (essentials):** choose OBD adapter (remember the last one, connect on launch), units (°C/°F, bar/psi/kPa, km/h/mph), simulation mode, keep screen on in gauges, redline alerts (sound/vibration, can be turned off).
@@ -131,5 +131,5 @@ In-car tests are batched at the end of Phase 2 (owner's decision). The Phase 2 t
 
 - How long without a reading counts as "N/A" (measured: ~12–13 requests/s in total, shared by all PIDs being read).
 - Whether Apple considers the Connect button on CarPlay a "setting".
-- CarPlay template item limits vs. up to 8 gauges.
+- CarPlay template item limits vs. up to 6 gauges.
 - Background BLE with a locked iPhone via `bluetooth-central` [TO CONFIRM].
