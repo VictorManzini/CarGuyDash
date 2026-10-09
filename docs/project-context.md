@@ -100,10 +100,11 @@ All five are merged into `main` (each with `--no-ff`). The first four passed the
 
 ## Pending in-car tests (owner)
 
-Next step only after these pass: Phase 2, item 2 of `docs/roadmap.md` ("Stand By").
+In-car tests are batched at the end of Phase 2 (owner's decision).
 
 - [ ] **`feature/connect-button`** (not merged into `main` yet): with the engine running, tap Start, then Disconnect → state "Disconnected", every value "N/A", no more commands in the log, no reconnection. Tap Connect → "Ready" again (setup with `ATH1` in the log); Start reads again.
 - [ ] **Reconnection** (`feature/reconnect`, already in `main`): while polling, unplug and plug the adapter back (or turn the iPhone's Bluetooth off and on) → "Reconnecting", then "Ready", and the values come back by themselves.
+- [ ] **`feature/stand-by`** (not merged into `main` yet): Stand By aparece durante a reconexão.
 
 ## Open questions
 
