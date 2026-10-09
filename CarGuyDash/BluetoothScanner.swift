@@ -37,7 +37,9 @@ enum ConnectionState: String {
 final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     /// Every log line of this run, shown on screen and saved to `logFileURL`.
     private(set) var log: [String] = []
-    private(set) var state = ConnectionState.bluetoothOff
+    private(set) var state = ConnectionState.bluetoothOff {
+        didSet { if state != oldValue { addLog("State: \(oldValue.rawValue) → \(state.rawValue)") } }
+    }
     /// True once the adapter can receive commands.
     var isReady: Bool { state == .ready }
     /// True while a car test is running.
@@ -61,6 +63,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     var pollingTask: Task<Void, Never>?
     /// One log file per app launch, in the app's Documents folder.
     let logFileURL: URL
+    private let timeFormatter = DateFormatter()
     @ObservationIgnored private var logFile: FileHandle?
     @ObservationIgnored private var pendingResponse: CheckedContinuation<String?, Never>?
 
@@ -84,6 +87,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        timeFormatter.locale = Locale(identifier: "en_US_POSIX")
+        timeFormatter.dateFormat = "HH:mm:ss.SSS"
         logFileURL = URL.documentsDirectory.appending(path: "log-\(formatter.string(from: .now)).txt")
         FileManager.default.createFile(atPath: logFileURL.path(), contents: nil)
         logFile = try? FileHandle(forWritingTo: logFileURL)
@@ -110,8 +115,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         @unknown default: addLog("Bluetooth: new state \(central.state.rawValue)")
         }
         guard state != .disconnected else { return }
-        connectionLost()
-        state = .bluetoothOff
+        connectionLost(to: .bluetoothOff)
     }
 
     func centralManager(
@@ -213,13 +217,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     // MARK: - Connection
 
     /// The link is gone: forget it, drop the command in progress, every value becomes N/A.
-    private func connectionLost() {
+    /// `newState` is set here so the log shows one state change, not a detour through `.reconnecting`.
+    private func connectionLost(to newState: ConnectionState = .reconnecting) {
         link = nil
         notifyCharacteristic = nil
         responseBuffer = ""
         finishCommand(with: nil)
         liveData.clear()
-        state = .reconnecting
+        state = newState
     }
 
     /// Connects to the known adapter (found by the iPhone's identifier for it),
@@ -246,8 +251,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         guard state != .disconnected else { return }
         addLog("Disconnect")
         stopPolling()
-        connectionLost()
-        state = .disconnected
+        connectionLost(to: .disconnected)
         centralManager.stopScan()
         if let adapter { centralManager.cancelPeripheralConnection(adapter) } // also cancels a pending connect
     }
@@ -336,11 +340,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         profiles.save(profile)
         car = profile
         needsCarInfo = false
+        addLog("Car profile saved") // never the VIN, make or model: the logs get pasted around
     }
 
     /// The new-car screen was closed without saving: "Unknown car" until the next connection asks again.
     func skipCarInfo() {
+        guard needsCarInfo else { return } // also called after Save closes the sheet
         needsCarInfo = false
+        addLog("Car profile sheet closed without saving")
     }
 
     // MARK: - Helpers
@@ -375,6 +382,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
     func addLog(_ line: String) {
+        let line = timeFormatter.string(from: .now) + " " + line
         print(line)
         log.append(line)
         logFile?.write(Data((line + "\n").utf8))

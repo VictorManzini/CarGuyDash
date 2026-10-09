@@ -51,6 +51,7 @@ extension BluetoothScanner {
 
     func startPolling() {
         guard pollingTask == nil else { return }
+        addLog("Start")
         pollingTask = Task {
             addLog("=== Polling started ===")
             // Runs until Stop. While the connection is down it waits, then reads again once ready.
@@ -74,6 +75,8 @@ extension BluetoothScanner {
 
     /// Ends the loop after the command in progress (at most 1 s).
     func stopPolling() {
-        pollingTask?.cancel()
+        guard let pollingTask, !pollingTask.isCancelled else { return }
+        addLog("Stop")
+        pollingTask.cancel()
     }
 }
