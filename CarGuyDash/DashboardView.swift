@@ -4,6 +4,10 @@ import SwiftUI
 struct DashboardView: View {
     let scanner: BluetoothScanner
     let unitSettings: UnitSettings
+    #if DEBUG
+    /// Screenshots: launching with `-openGaugePreview YES` opens the gauge preview directly.
+    @State private var openGaugePreview = UserDefaults.standard.bool(forKey: "openGaugePreview")
+    #endif
 
     var body: some View {
         // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
@@ -25,6 +29,9 @@ struct DashboardView: View {
         .sheet(isPresented: Binding(get: { scanner.needsCarInfo }, set: { if !$0 { scanner.skipCarInfo() } })) {
             CarInfoView(scanner: scanner)
         }
+        #if DEBUG
+        .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView() }
+        #endif
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
