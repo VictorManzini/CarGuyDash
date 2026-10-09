@@ -106,6 +106,8 @@ Second stack, merged into `main` on 2026-10-09 after the in-car test, in this or
 - **`feature/gauges`:** Dashboard is the first screen: numbers only, RPM large on top, the rest in a 2-column grid, "N/A" in grey; portrait and landscape. `Sensor.text(for:)` formats values (V with 1 decimal, the rest whole). Screen stays on only while polling. The test screen opens from the "Tests" button.
 - **`feature/reconnect`:** `ConnectionState` (Bluetooth off, searching, connecting, ready, reconnecting), shown at the top of the Dashboard. On a drop: forget the link, every value "N/A", state reconnecting. Reconnects only to the same adapter (iPhone identifier), with no attempt limit. Every connection runs the setup commands (with `ATH1`) before it is ready; polling resumes by itself unless Stop was tapped. Debug "Simulate disconnect" button (back after 3 s).
 
+- **`feature/units`** (stacked on `feature/ignition-off`, merges into `main` with it after the in-car test): three unit choices saved in UserDefaults (`UnitSettings`, `Units.swift`): °C/°F, bar/psi/kPa (all pressure sensors), km/h/mph. Values stay in °C, kPa, km/h; only the text is converted (`Sensor.displayValue`, `displayUnit`, `text(for:units:)`). Decimals: bar 2, psi 1, V 1, the rest 0. "N/A" and "Stand By" do not change. Simple `SettingsView` opened by the gear button on the Dashboard.
+
 ## Pending in-car tests (owner)
 
 In-car tests are batched at the end of Phase 2 (owner's decision). The Phase 2 test stays open in the roadmap until these pass.
@@ -114,6 +116,7 @@ In-car tests are batched at the end of Phase 2 (owner's decision). The Phase 2 t
 - [ ] **Connect on an already known car** (`feature/car-profile`): Connect does not show the "Which car is this?" sheet. Can be tested at home with the simulated adapter (save the car, Disconnect, Connect).
 - [ ] **Sheet swiped down** (`feature/car-profile`): swiping the sheet down leaves "Unknown car" and it asks again on the next connection. Not covered by the 2026-10-09 test; can be tested at home with the simulated adapter.
 - [ ] **Ignition off** (`feature/ignition-off`, not merged into `main` yet): with polling on, turn the ignition off → after about 2 s "Ignition off?" at the top and "Stand By" on every gauge, the state still "Ready" and the log shows "Car silent (no readings for 2 s)"; turn the ignition on again → numbers and "Ready" come back and the log shows "Car answering again".
+- [ ] **Units** (`feature/units`, not merged into `main` yet): in Settings pick °F, psi and mph → Dashboard oil/coolant in °F, MAP in psi (idle ~12.8), speed in mph while driving; close and reopen the app → the choices are still there. Can be tested at home with the simulated adapter.
 - [ ] **State restoration by iOS** (`feature/background-ble`): iOS closes the app in the background and relaunches it → "State restored by iOS" in the log, same adapter again, and polling resumes ("Polling resumed after restore") if it was on.
 
 ## Open questions

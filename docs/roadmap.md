@@ -21,7 +21,8 @@
 - [ ] Home page + gauges page (1 to 8 user-chosen gauges, portrait and landscape)
 - [ ] Gauge editing page (separate, to avoid taps while driving)
 - [ ] All-sensors page (Car Scanner style)
-- [ ] Settings: units, connect on launch, redline alerts
+- [x] Settings: units (°C/°F, bar/psi/kPa, km/h/mph) — simple screen from the Dashboard gear button
+- [ ] Settings: connect on launch, redline alerts
 
 ## Phase 4 — Locked iPhone
 - [x] Background BLE reading with the iPhone locked (bluetooth-central)

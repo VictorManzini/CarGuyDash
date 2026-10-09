@@ -2,11 +2,12 @@ import SwiftUI
 
 @main struct MyApp: App {
     @State private var scanner = BluetoothScanner()
+    @State private var unitSettings = UnitSettings()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            NavigationStack { DashboardView(scanner: scanner) }
+            NavigationStack { DashboardView(scanner: scanner, unitSettings: unitSettings) }
                 // The screen stays on only while polling.
                 // .inactive is only the moment in between (e.g. Control Center), so it is ignored.
                 .onChange(of: scenePhase) { _, phase in
