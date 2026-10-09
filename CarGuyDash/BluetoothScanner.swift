@@ -30,6 +30,10 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private(set) var isReady = false
     /// True while a car test is running.
     var isTesting = false
+    /// Latest sensor values, filled by the polling loop.
+    let liveData = LiveData()
+    /// The running polling loop; nil when stopped.
+    var pollingTask: Task<Void, Never>?
     /// One log file per app launch, in the app's Documents folder.
     let logFileURL: URL
     @ObservationIgnored private var logFile: FileHandle?

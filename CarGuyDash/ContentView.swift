@@ -11,7 +11,26 @@ struct ContentView: View {
                 Button("Test A") { Task { await scanner.runTestA() } }
                 Button("Test B") { Task { await scanner.runTestB() } }
             }
-            .disabled(!scanner.isReady || scanner.isTesting)
+            .disabled(!scanner.isReady || scanner.isTesting || scanner.isPolling)
+
+            HStack {
+                Button("Start") { scanner.startPolling() }
+                    .disabled(!scanner.isReady || scanner.isTesting || scanner.isPolling)
+                Button("Stop") { scanner.stopPolling() }
+                    .disabled(!scanner.isPolling)
+            }
+
+            #if DEBUG
+            // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                VStack(alignment: .leading) {
+                    ForEach(BluetoothScanner.polledSensors, id: \.self) { sensor in
+                        Text("\(sensor.name): \(Self.text(scanner.liveData.value(for: sensor), sensor.unit))")
+                    }
+                }
+                .font(.caption.monospaced())
+            }
+            #endif
 
             #if DEBUG
             Button("Simulated adapter") { scanner.useSimulatedAdapter() }
@@ -36,6 +55,11 @@ struct ContentView: View {
         }
         .buttonStyle(.bordered)
         .padding()
+    }
+
+    private static func text(_ value: Double?, _ unit: String) -> String {
+        guard let value else { return "N/A" }
+        return "\(value.formatted(.number.precision(.fractionLength(0...1)))) \(unit)"
     }
 }
 

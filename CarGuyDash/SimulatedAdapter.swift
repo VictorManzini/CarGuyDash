@@ -17,6 +17,7 @@ final class SimulatedAdapter: AdapterLink {
         "0B": [0x5D], // manifold 93 kPa
         "0F": [0x55], // intake air 45 °C
         "11": [0x4E], // throttle 30.6 %
+        "42": [0x37, 0x14], // module voltage 14.1 V (made up: not read in the car yet)
     ]
 
     /// `deliver` gets the full response, as the real adapter sends it back.
