@@ -10,7 +10,7 @@
 - [x] 🚗 Engine-running test: RPM matched the tachometer, oil and coolant shown
 
 ## Phase 2 — Complete adapter
-- [ ] Connect / Disconnect buttons; no automatic reconnection after Disconnect
+- [x] Connect / Disconnect buttons; no automatic reconnection after Disconnect
 - [ ] "Stand By" on every gauge while reconnecting (instead of "N/A")
 - [ ] Car profile: read the VIN; new car → ask make and model
 - [ ] Discover supported sensors on every connection
