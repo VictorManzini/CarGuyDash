@@ -90,8 +90,8 @@ struct CarProfileTests {
         let simulated = try #require(scanner.simulator)
         #expect(Gatekeeper.check("0902") == .allowed)
         #expect(simulated.received.filter { $0 == "0902\r" }.count == 1)
-        // It comes right after the setup commands.
-        #expect(simulated.received == (BluetoothScanner.setupCommands + ["0902"]).map { $0 + "\r" })
+        // It comes right after the setup commands, then the supported-PID blocks.
+        #expect(simulated.received == (BluetoothScanner.setupCommands + ["0902", "0100", "0120", "0140", "0160"]).map { $0 + "\r" })
 
         // Polling does not ask again; a new connection does.
         simulated.noDataChance = 0

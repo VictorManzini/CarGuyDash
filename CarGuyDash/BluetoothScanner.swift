@@ -54,6 +54,9 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private(set) var needsCarInfo = false
     /// "Make Model" of the current car, or "Unknown car".
     var carName: String { car?.name ?? "Unknown car" }
+    /// PIDs the engine ECU supports, discovered on every connection (not saved).
+    /// Nil: discovery failed or not done yet, so polling uses the fixed list.
+    private(set) var supportedPIDs: Set<Int>?
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
     /// One log file per app launch, in the app's Documents folder.
@@ -269,8 +272,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         centralManager.connect(peripheral)
     }
 
-    /// Runs the setup commands (with ATH1) on every new connection, reads the VIN, then marks it ready.
-    /// The VIN comes before "ready" so it never competes with the polling loop for the adapter.
+    /// Runs the setup commands (with ATH1) on every new connection, reads the VIN and the supported PIDs,
+    /// then marks it ready. Both come before "ready" so they never compete with the polling loop for the adapter.
     /// Polling, if on, picks up again by itself once the state is ready.
     private func prepare() async {
         for command in Self.setupCommands {
@@ -278,7 +281,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             guard link != nil else { return } // dropped again during setup
         }
         await readVIN()
-        guard link != nil else { return } // dropped again while reading the VIN
+        await discoverSupportedPIDs()
+        guard link != nil else { return } // dropped again while reading the VIN or the PIDs
         state = .ready
         addLog("Ready")
     }
@@ -298,6 +302,27 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         } else {
             addLog("VIN: known car")
         }
+    }
+
+    /// Asks 0100, 0120, 0140... while the last bit says the next block exists.
+    /// Any block without a valid answer from the engine ECU: give up and keep the fixed list (nil).
+    private func discoverSupportedPIDs() async {
+        var found = Set<Int>()
+        var block = 0x00
+        while block <= 0xE0 {
+            guard let result = await run(String(format: "01%02X", block), timeout: .seconds(3)),
+                  let decoded = SupportedPIDs.decode(block: block, from: result.response)
+            else {
+                addLog("Supported PIDs: no valid answer, using the fixed list")
+                supportedPIDs = nil
+                return
+            }
+            found.formUnion(decoded.pids)
+            guard decoded.hasNext else { break }
+            block += 0x20
+        }
+        supportedPIDs = found
+        addLog("Supported PIDs: \(found.count) found")
     }
 
     /// Saves make and model for the VIN just read (the "new car" screen's Save button).

@@ -40,6 +40,13 @@ extension BluetoothScanner {
         .rpm, .oilTemp, .coolantTemp, .manifoldPressure, .intakeAirTemp, .throttlePosition, .moduleVoltage,
     ]
 
+    /// What polling asks: the Dashboard sensors the car supports, or all of them if discovery failed.
+    /// A sensor the car lacks is never asked and stays "N/A".
+    var sensorsToPoll: [Sensor] {
+        guard let supportedPIDs else { return Self.polledSensors }
+        return Self.polledSensors.filter { supportedPIDs.contains(Int($0.rawValue, radix: 16) ?? -1) }
+    }
+
     var isPolling: Bool { pollingTask != nil }
 
     func startPolling() {
@@ -48,11 +55,13 @@ extension BluetoothScanner {
             addLog("=== Polling started ===")
             // Runs until Stop. While the connection is down it waits, then reads again once ready.
             while !Task.isCancelled {
-                guard isReady else {
+                let sensors = sensorsToPoll
+                // Also waits when the car supports none of them: without it this loop would never yield.
+                guard isReady, !sensors.isEmpty else {
                     try? await Task.sleep(for: .milliseconds(200))
                     continue
                 }
-                for sensor in Self.polledSensors where !Task.isCancelled && isReady {
+                for sensor in sensors where !Task.isCancelled && isReady {
                     // Short timeout: a sensor that does not answer must not hold up the others.
                     let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
                     liveData.record(result.flatMap { sensor.value(from: $0.response) }, for: sensor)

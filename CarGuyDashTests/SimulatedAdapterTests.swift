@@ -46,8 +46,8 @@ struct SimulatedAdapterTests {
 
     @Test func blockedCommandsNeverReachTheSimulator() async {
         let (scanner, simulated) = await connect()
-        // Only the setup commands and the VIN request got there so far.
-        let beforeBlocked = (BluetoothScanner.setupCommands + ["0902"]).map { $0 + "\r" }
+        // Only the setup commands, the VIN request and the supported-PID blocks got there so far.
+        let beforeBlocked = (BluetoothScanner.setupCommands + ["0902", "0100", "0120", "0140", "0160"]).map { $0 + "\r" }
         #expect(simulated.received == beforeBlocked)
         for command in ["04", "0400", "ATPP 0C SV 01", "ATSH 7E0", "010C\r04"] {
             #expect(await scanner.run(command) == nil, "\(command.debugDescription)")
