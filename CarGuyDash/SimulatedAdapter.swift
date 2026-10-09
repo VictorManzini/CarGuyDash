@@ -8,6 +8,8 @@ final class SimulatedAdapter: AdapterLink {
     private(set) var received: [String] = []
     /// Chance that a PID answers "NO DATA", like the real car now and then.
     var noDataChance = 0.05
+    /// False: 0902 answers "NO DATA", like a car that does not give its VIN.
+    var answersVIN = true
     private let deliver: (String) -> Void
 
     /// Engine ECU data bytes from the in-car log (2026-10-08). RPM is made up on every request.
@@ -19,6 +21,9 @@ final class SimulatedAdapter: AdapterLink {
         "11": [0x4E], // throttle 30.6 %
         "42": [0x37, 0x14], // module voltage 14.1 V (made up: not read in the car yet)
     ]
+
+    /// A made-up VIN, obviously fake. Never put the real car's VIN in the code, tests or docs: the repository is public.
+    static let fakeVIN = "TESTVIN0000000001"
 
     /// `deliver` gets the full response, as the real adapter sends it back.
     init(deliver: @escaping (String) -> Void) {
@@ -39,6 +44,7 @@ final class SimulatedAdapter: AdapterLink {
         case "ATZ", "ATI": return "ELM327 v2.3"
         case "ATRV": return "12.4V"
         case _ where command.hasPrefix("AT"): return "OK"
+        case "0902": return answersVIN ? vinResponse() : "NO DATA"
         default: break
         }
         let pid = String(command.dropFirst(2))
@@ -51,6 +57,13 @@ final class SimulatedAdapter: AdapterLink {
                 header + String(format: "%02X41", data.count + 2) + pid + data.map { String(format: "%02X", $0) }.joined()
             }
             .joined(separator: "\r")
+    }
+
+    /// Three frames from the engine ECU only (7E8), like the car: 3 + 7 + 7 VIN bytes.
+    private func vinResponse() -> String {
+        let hex = Self.fakeVIN.utf8.map { String(format: "%02X", $0) }
+        let first = hex[0..<3].joined(), second = hex[3..<10].joined(), third = hex[10..<17].joined()
+        return ["7E8" + "1014" + "490201" + first, "7E8" + "21" + second, "7E8" + "22" + third].joined(separator: "\r")
     }
 
     private func bytes(for pid: String) -> [UInt8]? {

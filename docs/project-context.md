@@ -104,7 +104,8 @@ In-car tests are batched at the end of Phase 2 (owner's decision).
 
 - [ ] **`feature/connect-button`** (not merged into `main` yet): with the engine running, tap Start, then Disconnect → state "Disconnected", every value "N/A", no more commands in the log, no reconnection. Tap Connect → "Ready" again (setup with `ATH1` in the log); Start reads again.
 - [ ] **Reconnection** (`feature/reconnect`, already in `main`): while polling, unplug and plug the adapter back (or turn the iPhone's Bluetooth off and on) → "Reconnecting", then "Ready", and the values come back by themselves.
-- [ ] **`feature/stand-by`** (not merged into `main` yet): Stand By aparece durante a reconexão.
+- [ ] **`feature/stand-by`** (not merged into `main` yet): "Stand By" shows up on the gauges during reconnection.
+- [ ] **`feature/car-profile`** (not merged into `main` yet): connect with the real car → the VIN is read (it must not appear in the log); the first time, the "Which car is this?" sheet appears, and after Save the Dashboard shows "Make Model"; connect again → no sheet. Swiping the sheet down leaves "Unknown car" and it asks again on the next connection.
 
 ## Open questions
 

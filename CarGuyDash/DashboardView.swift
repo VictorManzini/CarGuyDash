@@ -9,7 +9,7 @@ struct DashboardView: View {
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
             ScrollView {
                 VStack(spacing: 12) {
-                    Text(scanner.state.rawValue).font(.caption).foregroundStyle(.secondary)
+                    Text("\(scanner.carName) · \(scanner.state.rawValue)").font(.caption).foregroundStyle(.secondary)
                     block(.rpm, valueSize: 96)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         ForEach(BluetoothScanner.polledSensors.filter { $0 != .rpm }, id: \.self) { sensor in
@@ -19,6 +19,10 @@ struct DashboardView: View {
                 }
                 .padding()
             }
+        }
+        // Swiping the screen down closes it without saving: "Unknown car" until the next connection.
+        .sheet(isPresented: Binding(get: { scanner.needsCarInfo }, set: { if !$0 { scanner.skipCarInfo() } })) {
+            CarInfoView(scanner: scanner)
         }
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)
