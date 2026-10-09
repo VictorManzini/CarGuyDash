@@ -90,8 +90,8 @@ struct CarProfileTests {
         let simulated = try #require(scanner.simulator)
         #expect(Gatekeeper.check("0902") == .allowed)
         #expect(simulated.received.filter { $0 == "0902\r" }.count == 1)
-        // It comes right after the setup commands.
-        #expect(simulated.received == (BluetoothScanner.setupCommands + ["0902"]).map { $0 + "\r" })
+        // It comes right after the setup commands, then the supported-PID blocks.
+        #expect(simulated.received == (BluetoothScanner.setupCommands + ["0902", "0100", "0120", "0140", "0160"]).map { $0 + "\r" })
 
         // Polling does not ask again; a new connection does.
         simulated.noDataChance = 0
@@ -103,5 +103,30 @@ struct CarProfileTests {
         scanner.connect()
         try await waitReady(scanner)
         #expect(simulated.received.filter { $0 == "0902\r" }.count == 2)
+    }
+}
+
+@MainActor
+struct VINStaysOutOfTheLogTests {
+    // Hex of the fake VIN's first bytes ("TES"), as they would appear in a log line.
+    private let fakeVINHex = "544553"
+
+    @Test func testADoesNotAskForTheVIN() async {
+        let scanner = BluetoothScanner(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let simulated = await scanner.useSimulatedAdapter()
+        let asked = simulated.received.count
+        await scanner.runTestA()
+        // Only the VIN request made when connecting; none from the test.
+        #expect(simulated.received.filter { $0 == "0902\r" }.count == 1)
+        #expect(simulated.received.count > asked)
+        #expect(!scanner.log.contains { $0.contains("0902") || $0.contains(fakeVINHex) || $0.contains(SimulatedAdapter.fakeVIN) })
+    }
+
+    @Test func aLateVINAnswerIsHidden() async {
+        let scanner = BluetoothScanner(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await scanner.useSimulatedAdapter()
+        scanner.receive("7E81014490201544553\r7E8215456494E303030\r7E82230303030303031\r\r>") // nobody is waiting for it
+        #expect(scanner.log.last?.contains("Late response") == true)
+        #expect(!scanner.log.contains { $0.contains(fakeVINHex) })
     }
 }

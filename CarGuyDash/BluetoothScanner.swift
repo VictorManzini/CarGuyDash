@@ -37,7 +37,9 @@ enum ConnectionState: String {
 final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     /// Every log line of this run, shown on screen and saved to `logFileURL`.
     private(set) var log: [String] = []
-    private(set) var state = ConnectionState.bluetoothOff
+    private(set) var state = ConnectionState.bluetoothOff {
+        didSet { if state != oldValue { addLog("State: \(oldValue.rawValue) → \(state.rawValue)") } }
+    }
     /// True once the adapter can receive commands.
     var isReady: Bool { state == .ready }
     /// True while a car test is running.
@@ -54,10 +56,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private(set) var needsCarInfo = false
     /// "Make Model" of the current car, or "Unknown car".
     var carName: String { car?.name ?? "Unknown car" }
+    /// PIDs the engine ECU supports, discovered on every connection (not saved).
+    /// Nil: discovery failed or not done yet, so polling uses the fixed list.
+    private(set) var supportedPIDs: Set<Int>?
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
     /// One log file per app launch, in the app's Documents folder.
     let logFileURL: URL
+    private let timeFormatter = DateFormatter()
     @ObservationIgnored private var logFile: FileHandle?
     @ObservationIgnored private var pendingResponse: CheckedContinuation<String?, Never>?
 
@@ -81,6 +87,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        timeFormatter.locale = Locale(identifier: "en_US_POSIX")
+        timeFormatter.dateFormat = "HH:mm:ss.SSS"
         logFileURL = URL.documentsDirectory.appending(path: "log-\(formatter.string(from: .now)).txt")
         FileManager.default.createFile(atPath: logFileURL.path(), contents: nil)
         logFile = try? FileHandle(forWritingTo: logFileURL)
@@ -107,8 +115,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         @unknown default: addLog("Bluetooth: new state \(central.state.rawValue)")
         }
         guard state != .disconnected else { return }
-        connectionLost()
-        state = .bluetoothOff
+        connectionLost(to: .bluetoothOff)
     }
 
     func centralManager(
@@ -196,7 +203,10 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         guard responseBuffer.contains(">") else { return }
         let response = responseBuffer
         responseBuffer = ""
-        if pendingResponse == nil { addLog("Late response (ignored): \(response.debugDescription)") }
+        if pendingResponse == nil {
+            // A late answer to 0902 (service 09 PID 02 = "490201...") is the VIN: keep it out of the log.
+            addLog("Late response (ignored): \(response.contains("490201") ? "(VIN, hidden)" : response.debugDescription)")
+        }
         finishCommand(with: response)
     }
 
@@ -207,13 +217,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     // MARK: - Connection
 
     /// The link is gone: forget it, drop the command in progress, every value becomes N/A.
-    private func connectionLost() {
+    /// `newState` is set here so the log shows one state change, not a detour through `.reconnecting`.
+    private func connectionLost(to newState: ConnectionState = .reconnecting) {
         link = nil
         notifyCharacteristic = nil
         responseBuffer = ""
         finishCommand(with: nil)
         liveData.clear()
-        state = .reconnecting
+        state = newState
     }
 
     /// Connects to the known adapter (found by the iPhone's identifier for it),
@@ -240,8 +251,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         guard state != .disconnected else { return }
         addLog("Disconnect")
         stopPolling()
-        connectionLost()
-        state = .disconnected
+        connectionLost(to: .disconnected)
         centralManager.stopScan()
         if let adapter { centralManager.cancelPeripheralConnection(adapter) } // also cancels a pending connect
     }
@@ -269,8 +279,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         centralManager.connect(peripheral)
     }
 
-    /// Runs the setup commands (with ATH1) on every new connection, reads the VIN, then marks it ready.
-    /// The VIN comes before "ready" so it never competes with the polling loop for the adapter.
+    /// Runs the setup commands (with ATH1) on every new connection, reads the VIN and the supported PIDs,
+    /// then marks it ready. Both come before "ready" so they never compete with the polling loop for the adapter.
     /// Polling, if on, picks up again by itself once the state is ready.
     private func prepare() async {
         for command in Self.setupCommands {
@@ -278,7 +288,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             guard link != nil else { return } // dropped again during setup
         }
         await readVIN()
-        guard link != nil else { return } // dropped again while reading the VIN
+        await discoverSupportedPIDs()
+        guard link != nil else { return } // dropped again while reading the VIN or the PIDs
         state = .ready
         addLog("Ready")
     }
@@ -300,6 +311,27 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         }
     }
 
+    /// Asks 0100, 0120, 0140... while the last bit says the next block exists.
+    /// Any block without a valid answer from the engine ECU: give up and keep the fixed list (nil).
+    private func discoverSupportedPIDs() async {
+        var found = Set<Int>()
+        var block = 0x00
+        while block <= 0xE0 {
+            guard let result = await run(String(format: "01%02X", block), timeout: .seconds(3)),
+                  let decoded = SupportedPIDs.decode(block: block, from: result.response)
+            else {
+                addLog("Supported PIDs: no valid answer, using the fixed list")
+                supportedPIDs = nil
+                return
+            }
+            found.formUnion(decoded.pids)
+            guard decoded.hasNext else { break }
+            block += 0x20
+        }
+        supportedPIDs = found
+        addLog("Supported PIDs: \(found.count) found")
+    }
+
     /// Saves make and model for the VIN just read (the "new car" screen's Save button).
     func saveCar(make: String, model: String) {
         let make = make.trimmingCharacters(in: .whitespaces), model = model.trimmingCharacters(in: .whitespaces)
@@ -308,11 +340,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         profiles.save(profile)
         car = profile
         needsCarInfo = false
+        addLog("Car profile saved") // never the VIN, make or model: the logs get pasted around
     }
 
     /// The new-car screen was closed without saving: "Unknown car" until the next connection asks again.
     func skipCarInfo() {
+        guard needsCarInfo else { return } // also called after Save closes the sheet
         needsCarInfo = false
+        addLog("Car profile sheet closed without saving")
     }
 
     // MARK: - Helpers
@@ -347,6 +382,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
     func addLog(_ line: String) {
+        let line = timeFormatter.string(from: .now) + " " + line
         print(line)
         log.append(line)
         logFile?.write(Data((line + "\n").utf8))
