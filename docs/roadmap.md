@@ -24,7 +24,7 @@
 - [ ] Settings: units, connect on launch, redline alerts
 
 ## Phase 4 — Locked iPhone
-- [ ] Background BLE reading with the iPhone locked (bluetooth-central) [TO CONFIRM it is possible]
+- [x] Background BLE reading with the iPhone locked (bluetooth-central) [TO CONFIRM it is possible]
 - [ ] 🚗 Test with the iPhone locked
 
 ## Phase 5 — CarPlay
