@@ -6,7 +6,7 @@ extension BluetoothScanner {
     static let setupCommands = ["ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATSP0"]
 
     /// Setup + battery voltage, the supported-PID blocks, then a fixed list of PIDs.
-    /// Logs each raw response and its time.
+    /// Logs each raw response and its time. Not 0902: the VIN is read on connecting and kept out of the logs.
     func runTestA() async {
         isTesting = true
         defer { isTesting = false }
@@ -22,7 +22,7 @@ extension BluetoothScanner {
             block += 0x20
         }
 
-        for command in ["0902", "010C", "015C", "010B", "0105", "010D", "0111", "010F", "0104"] {
+        for command in ["010C", "015C", "010B", "0105", "010D", "0111", "010F", "0104"] {
             await runAndLog(command)
         }
         addLog("=== Test A finished ===")

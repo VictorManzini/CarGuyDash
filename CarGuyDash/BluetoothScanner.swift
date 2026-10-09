@@ -199,7 +199,10 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         guard responseBuffer.contains(">") else { return }
         let response = responseBuffer
         responseBuffer = ""
-        if pendingResponse == nil { addLog("Late response (ignored): \(response.debugDescription)") }
+        if pendingResponse == nil {
+            // A late answer to 0902 (service 09 PID 02 = "490201...") is the VIN: keep it out of the log.
+            addLog("Late response (ignored): \(response.contains("490201") ? "(VIN, hidden)" : response.debugDescription)")
+        }
         finishCommand(with: response)
     }
 
