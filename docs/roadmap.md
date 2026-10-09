@@ -24,8 +24,8 @@
 - [ ] Settings: units, connect on launch, redline alerts
 
 ## Phase 4 — Locked iPhone
-- [x] Background BLE reading with the iPhone locked (bluetooth-central) [TO CONFIRM it is possible]
-- [ ] 🚗 Test with the iPhone locked
+- [x] Background BLE reading with the iPhone locked (bluetooth-central)
+- [x] 🚗 Test with the iPhone locked
 
 ## Phase 5 — CarPlay
 - [ ] Owner decision: pay for the Apple Developer Program (US$ 99/year)
