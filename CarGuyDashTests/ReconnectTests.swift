@@ -55,4 +55,41 @@ struct ReconnectTests {
         #expect(simulated.received.count == sent)
         #expect(allNA(scanner))
     }
+
+    @Test func disconnectStaysDisconnected() async throws {
+        let (scanner, simulated) = try await pollingScanner()
+
+        scanner.disconnect()
+        #expect(scanner.state == .disconnected)
+        #expect(allNA(scanner))
+        #expect(try await wait { !scanner.isPolling })
+
+        // No reconnection and no command sent.
+        let sent = simulated.received.count
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(scanner.state == .disconnected)
+        #expect(simulated.received.count == sent)
+    }
+
+    @Test func disconnectDuringADropCancelsTheReconnection() async throws {
+        let (scanner, simulated) = try await pollingScanner()
+
+        scanner.simulateDisconnect(for: .milliseconds(200))
+        scanner.disconnect()
+        let sent = simulated.received.count
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(scanner.state == .disconnected)
+        #expect(simulated.received.count == sent)
+    }
+
+    @Test func connectComesBackReady() async throws {
+        let (scanner, simulated) = try await pollingScanner()
+
+        scanner.disconnect()
+        scanner.connect()
+        #expect(try await wait { scanner.state == .ready })
+        // The setup commands were sent again; polling stays off until Start.
+        #expect(simulated.received.filter { $0 == "ATH1\r" }.count == 2)
+        #expect(!scanner.isPolling)
+    }
 }

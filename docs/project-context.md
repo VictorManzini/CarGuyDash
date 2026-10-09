@@ -98,6 +98,13 @@ All five are merged into `main` (each with `--no-ff`). The first four passed the
 - **`feature/gauges`:** Dashboard is the first screen: numbers only, RPM large on top, the rest in a 2-column grid, "N/A" in grey; portrait and landscape. `Sensor.text(for:)` formats values (V with 1 decimal, the rest whole). Screen stays on only while polling. The test screen opens from the "Tests" button.
 - **`feature/reconnect`:** `ConnectionState` (Bluetooth off, searching, connecting, ready, reconnecting), shown at the top of the Dashboard. On a drop: forget the link, every value "N/A", state reconnecting. Reconnects only to the same adapter (iPhone identifier), with no attempt limit. Every connection runs the setup commands (with `ATH1`) before it is ready; polling resumes by itself unless Stop was tapped. Debug "Simulate disconnect" button (back after 3 s).
 
+## Pending in-car tests (owner)
+
+Next step only after these pass: Phase 2, item 2 of `docs/roadmap.md` ("Stand By").
+
+- [ ] **`feature/connect-button`** (not merged into `main` yet): with the engine running, tap Start, then Disconnect → state "Disconnected", every value "N/A", no more commands in the log, no reconnection. Tap Connect → "Ready" again (setup with `ATH1` in the log); Start reads again.
+- [ ] **Reconnection** (`feature/reconnect`, already in `main`): while polling, unplug and plug the adapter back (or turn the iPhone's Bluetooth off and on) → "Reconnecting", then "Ready", and the values come back by themselves.
+
 ## Open questions
 
 - How long without a reading counts as "N/A" (measured: ~12–13 requests/s in total, shared by all PIDs being read).
