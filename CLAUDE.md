@@ -1,6 +1,7 @@
 # Car Guy Dash
 
 Full context: `docs/project-context.md`. Read it before starting any task.
+Roadmap: docs/roadmap.md. Update the phase checkboxes when a step is done.
 
 ## Fixed rules
 
