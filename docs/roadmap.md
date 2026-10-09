@@ -18,6 +18,7 @@
 
 ## Phase 3 — iPhone screens
 - [ ] Visual prototype of the screens (only when the owner asks)
+- [x] Four gauge styles (analog, digital, vertical bar, arc) + per-sensor ranges + Debug "Gauge preview" (checked on the simulator)
 - [ ] Home page + gauges page (1 to 6 user-chosen gauges, portrait and landscape)
 - [ ] Gauge editing page (separate, to avoid taps while driving)
 - [x] Boost gauge on the Dashboard (manifold − atmospheric)

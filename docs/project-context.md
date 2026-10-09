@@ -29,12 +29,12 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 ## Screens
 
 - **Home page:** one button per page + a Connect button (becomes Disconnect once connected).
-- **Gauges:** 1 to 6, count and design chosen by the user, individual design per gauge. Portrait and landscape. Design not defined yet.
+- **Gauges:** 1 to 6, count and design chosen by the user, individual design per gauge. Portrait and landscape. Four styles exist (analog, digital, vertical bar, arc; see `feature/gauge-styles`); the gauges page itself is not built yet.
 - **Gauge editing:** separate page (avoids accidental taps while driving). Sets count, design, sensor and redline for each gauge. When disconnected, shows every sensor in the enum; a sensor the car does not support shows "N/A".
 - **Sensors:** all sensors with fast readings, Car Scanner style. Reads all PIDs while open. Not shown on CarPlay.
 - **Settings (essentials):** choose OBD adapter (remember the last one, connect on launch), units (°C/°F, bar/psi/kPa, km/h/mph), simulation mode, keep screen on in gauges, redline alerts (sound/vibration, can be turned off).
 - **Later:** session CSV export, per-sensor priority, "About" screen.
-- No visual prototype yet. Do not design screens until asked.
+- No visual prototype of the screens yet (only the gauge styles). Do not design screens until asked.
 
 ## Adapter interface
 
@@ -114,6 +114,13 @@ Third stack, merged into `main` on 2026-10-09 (night) after the in-car test, in 
 - **`feature/reconnect`:** `ConnectionState` (Bluetooth off, searching, connecting, ready, reconnecting), shown at the top of the Dashboard. On a drop: forget the link, every value "N/A", state reconnecting. Reconnects only to the same adapter (iPhone identifier), with no attempt limit. Every connection runs the setup commands (with `ATH1`) before it is ready; polling resumes by itself unless Stop was tapped. Debug "Simulate disconnect" button (back after 3 s).
 
 - **`feature/units`** (stacked on `feature/ignition-off`): three unit choices saved in UserDefaults (`UnitSettings`, `Units.swift`): °C/°F, bar/psi/kPa (all pressure sensors), km/h/mph. Values stay in °C, kPa, km/h; only the text is converted (`Sensor.displayValue`, `displayUnit`, `text(for:units:)`). Decimals: bar 2, psi 1, V 1, the rest 0. "N/A" and "Stand By" do not change. Simple `SettingsView` opened by the gear button on the Dashboard.
+- **`feature/gauge-styles`** (from `main`, not merged): start of Phase 3.
+  - `GaugeRange` (`GaugeRange.swift`): per sensor `min`, `max`, `normalLow`, `normalHigh`, `redline`, always in the internal unit (°C, kPa, km/h); converted only for labels (`converted(for:_:)`). Codable; changed ranges are saved in UserDefaults (`GaugeRangeSettings`, key `gauge.ranges`), the rest use the defaults. Defaults: RPM 0–7000, normal 0–6000, redline 6500 (no blue); coolant 40–130 °C, normal 90–105, redline 105; every other sensor = the range its formula can give, normal = all of it, redline = max (no made-up engine limits).
+  - Color stops on the scale: blue at the minimum (only when `normalLow` > `min`) → green at `normalLow` → yellow at `normalHigh` → red from the redline. `color(at:)` = the last stop at or before the value.
+  - Four styles (`GaugeStyles.swift`), each takes a `GaugeReading` (sensor, `gaugeText` text, value, range, units), drawn for a dark background: **Analog** (old racing tachometer, 260° arc open at the bottom, numbers on the arc, RPM in thousands "×1000 rpm", red redline band, red needle); **Digital** (big number, white, red only from the redline); **Vertical bar** and **Arc** (fixed gradient on the scale, the fill reveals it up to the value; value below the bar / in the center of the arc). Sensor name below each gauge.
+  - Stand By / N/A: analog = near-transparent grey layer + red text in the center, needle hidden; the others = the text replaces the number in grey, no fill.
+  - **Gauge preview** (Debug only, "Gauge preview" button on the Tests screen): the four styles side by side, sensor picker, value slider, Value / Stand By / N/A buttons, dark mode. For screenshots it opens directly with `-openGaugePreview YES -gaugePreview.sensor 05 -gaugePreview.value 95 -gaugePreview.state "Stand By"`.
+  - Checked on the simulator (coolant 60, 95, 115 °C; RPM 6200; Stand By; N/A). Not on the Dashboard yet.
 - **`feature/boost`** (stacked on `feature/units`): the Dashboard block "Manifold pressure" became "Boost" = manifold (0B) − atmospheric (0133), in kPa inside, shown in the chosen pressure unit (bar 2, psi 1, kPa 0); negative = vacuum. The manifold is still polled, just not shown. `0133` is asked once when polling starts (and again after a connection drop), then every 30 s (`pollBarometricPressureIfDue`, not part of the silence check or the readings meter); it lives 60 s in `LiveData` (the other sensors 2 s). Missing or old manifold/atmospheric = "N/A", never a default atmospheric value. The simulated adapter answers `0133` with `5D` (93 kPa) and makes the manifold follow the drawn RPM in a straight line (750 rpm = 88 kPa, 3000 rpm = 190 kPa), so Boost swings from about −0.05 to +0.97 bar. Stand By, N/A and "Ignition off?" apply as before.
 
 ## Pending in-car tests (owner)
