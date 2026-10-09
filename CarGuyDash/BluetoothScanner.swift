@@ -44,6 +44,16 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     var isTesting = false
     /// Latest sensor values, filled by the polling loop.
     let liveData = LiveData()
+    /// The saved cars (only on this iPhone).
+    let profiles: CarProfiles
+    /// The car of the current connection; nil = no VIN or not named yet ("Unknown car").
+    private(set) var car: CarProfile?
+    /// VIN of the current connection; nil if the car did not answer. Never logged: the logs get pasted around.
+    private(set) var vin: String?
+    /// True when the VIN is new and the app waits for make and model.
+    private(set) var needsCarInfo = false
+    /// "Make Model" of the current car, or "Unknown car".
+    var carName: String { car?.name ?? "Unknown car" }
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
     /// One log file per app launch, in the app's Documents folder.
@@ -66,7 +76,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         (CBUUID(string: "FFE0"), CBUUID(string: "FFE1"), CBUUID(string: "FFE1")),
     ]
 
-    override init() {
+    init(defaults: UserDefaults = .standard) {
+        profiles = CarProfiles(defaults: defaults)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
@@ -258,15 +269,50 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         centralManager.connect(peripheral)
     }
 
-    /// Runs the setup commands (with ATH1) on every new connection, then marks it ready.
+    /// Runs the setup commands (with ATH1) on every new connection, reads the VIN, then marks it ready.
+    /// The VIN comes before "ready" so it never competes with the polling loop for the adapter.
     /// Polling, if on, picks up again by itself once the state is ready.
     private func prepare() async {
         for command in Self.setupCommands {
             _ = await run(command)
             guard link != nil else { return } // dropped again during setup
         }
+        await readVIN()
+        guard link != nil else { return } // dropped again while reading the VIN
         state = .ready
         addLog("Ready")
+    }
+
+    /// Asks for the VIN (once per connection) and looks the car up. No VIN: carries on as "Unknown car".
+    private func readVIN() async {
+        needsCarInfo = false
+        // Short timeout: a car that does not answer must not hold up the readings.
+        let result = await run("0902", timeout: .seconds(3))
+        vin = result.flatMap { VIN.decode(from: $0.response) }
+        car = vin.flatMap { profiles.profile(for: $0) }
+        if vin == nil {
+            addLog("VIN: not available")
+        } else if car == nil {
+            addLog("VIN: new car, asking for make and model")
+            needsCarInfo = true
+        } else {
+            addLog("VIN: known car")
+        }
+    }
+
+    /// Saves make and model for the VIN just read (the "new car" screen's Save button).
+    func saveCar(make: String, model: String) {
+        let make = make.trimmingCharacters(in: .whitespaces), model = model.trimmingCharacters(in: .whitespaces)
+        guard let vin, !make.isEmpty, !model.isEmpty else { return }
+        let profile = CarProfile(vin: vin, make: make, model: model)
+        profiles.save(profile)
+        car = profile
+        needsCarInfo = false
+    }
+
+    /// The new-car screen was closed without saving: "Unknown car" until the next connection asks again.
+    func skipCarInfo() {
+        needsCarInfo = false
     }
 
     // MARK: - Helpers

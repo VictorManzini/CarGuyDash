@@ -8,6 +8,8 @@ final class SimulatedAdapter: AdapterLink {
     private(set) var received: [String] = []
     /// Chance that a PID answers "NO DATA", like the real car now and then.
     var noDataChance = 0.05
+    /// False: 0902 answers "NO DATA", like a car that does not give its VIN.
+    var answersVIN = true
     private let deliver: (String) -> Void
 
     /// Engine ECU data bytes from the in-car log (2026-10-08). RPM is made up on every request.
@@ -42,7 +44,7 @@ final class SimulatedAdapter: AdapterLink {
         case "ATZ", "ATI": return "ELM327 v2.3"
         case "ATRV": return "12.4V"
         case _ where command.hasPrefix("AT"): return "OK"
-        case "0902": return vinResponse()
+        case "0902": return answersVIN ? vinResponse() : "NO DATA"
         default: break
         }
         let pid = String(command.dropFirst(2))
