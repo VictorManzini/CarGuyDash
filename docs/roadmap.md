@@ -12,7 +12,7 @@
 ## Phase 2 — Complete adapter
 - [x] Connect / Disconnect buttons; no automatic reconnection after Disconnect
 - [x] "Stand By" on every gauge while reconnecting (instead of "N/A")
-- [ ] Car profile: read the VIN; new car → ask make and model
+- [x] Car profile: read the VIN; new car → ask make and model
 - [ ] Discover supported sensors on every connection
 - [ ] 🚗 Test: reconnection (ignition off/on), Disconnect, Stand By
 
