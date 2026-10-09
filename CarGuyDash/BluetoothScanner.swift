@@ -1,6 +1,7 @@
 import CoreBluetooth
 import Foundation
 import Observation
+import UIKit
 
 /// Whoever carries an approved command to the adapter: the real Bluetooth one or the simulated one.
 /// Only `BluetoothScanner.send(_:)` calls `write`, after the gatekeeper approved the command.
@@ -65,6 +66,12 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private(set) var supportedPIDs: Set<Int>?
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
+    /// Counts the valid readings of the current measurement window (see `ReadingMeter`).
+    @ObservationIgnored var meter = ReadingMeter()
+    /// How often the measurement line is written. Tests shorten it.
+    @ObservationIgnored var meterInterval = Duration.seconds(10)
+    /// Whether the app is on screen; set by `setAppPhase`.
+    private(set) var appPhase: AppPhase
     /// One log file per app launch, in the app's Documents folder.
     let logFileURL: URL
     private let timeFormatter = DateFormatter()
@@ -89,6 +96,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     init(defaults: UserDefaults = .standard) {
         profiles = CarProfiles(defaults: defaults)
+        // A background relaunch (state restoration) starts here too, so ask instead of assuming "active".
+        appPhase = UIApplication.shared.applicationState == .background ? .background : .active
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
@@ -407,6 +416,15 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             link = simulator
             await prepare()
         }
+    }
+
+    /// The app went to the background or came back. The measurement window under way is closed first,
+    /// so each line belongs to one phase only.
+    func setAppPhase(_ phase: AppPhase) {
+        guard phase != appPhase else { return }
+        if isPolling { addLog(meter.close(in: appPhase)) }
+        appPhase = phase
+        addLog(phase == .background ? "App went to the background" : "App back in the foreground")
     }
 
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).

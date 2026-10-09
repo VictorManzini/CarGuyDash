@@ -54,6 +54,14 @@ extension BluetoothScanner {
         addLog("Start")
         pollingTask = Task {
             addLog("=== Polling started ===")
+            meter = ReadingMeter()
+            // Only measures: polling never waits for it. In the background it may fire late; the line says by how much.
+            let meterTask = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: meterInterval)
+                    if !Task.isCancelled { addLog(meter.close(in: appPhase)) }
+                }
+            }
             // Runs until Stop. While the connection is down it waits for the state to change, then reads again once ready.
             while !Task.isCancelled {
                 let sensors = sensorsToPoll
@@ -66,9 +74,12 @@ extension BluetoothScanner {
                 for sensor in sensors where !Task.isCancelled && isReady {
                     // Short timeout: a sensor that does not answer must not hold up the others.
                     let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
-                    liveData.record(result.flatMap { sensor.value(from: $0.response) }, for: sensor)
+                    let value = result.flatMap { sensor.value(from: $0.response) }
+                    if value != nil { meter.record() }
+                    liveData.record(value, for: sensor)
                 }
             }
+            meterTask.cancel()
             addLog("=== Polling stopped ===")
             pollingTask = nil
         }
