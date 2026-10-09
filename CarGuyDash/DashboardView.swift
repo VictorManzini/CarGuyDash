@@ -36,15 +36,16 @@ struct DashboardView: View {
         }
     }
 
-    /// Big value, small unit and name. No value: "N/A" in grey.
+    /// Big value, small unit and name. "Stand By" or "N/A" (no number) in grey, without the unit.
     private func block(_ sensor: Sensor, valueSize: CGFloat) -> some View {
         let value = scanner.liveData.value(for: sensor)
+        let hasNumber = scanner.state == .ready && value != nil
         return VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(sensor.text(for: value))
+                Text(gaugeText(for: sensor, state: scanner.state, value: value))
                     .font(.system(size: valueSize, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(value == nil ? .secondary : .primary)
-                if value != nil {
+                    .foregroundStyle(hasNumber ? .primary : .secondary)
+                if hasNumber {
                     Text(sensor.unit).font(.headline).foregroundStyle(.secondary)
                 }
             }
