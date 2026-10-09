@@ -58,3 +58,26 @@ struct SensorTests {
         #expect(Sensor.rpm.value(from: response) == nil)
     }
 }
+
+struct SensorTextTests {
+    @Test(arguments: [
+        (Sensor.rpm, 1726.0, "1726"),
+        (.rpm, 812.75, "813"),
+        (.oilTemp, 67.0, "67"),
+        (.coolantTemp, 69.4, "69"),
+        (.intakeAirTemp, -7.0, "-7"),
+        (.manifoldPressure, 93.0, "93"),
+        (.throttlePosition, 78 * 100 / 255.0, "31"),
+        (.moduleVoltage, 14.1, "14.1"),
+        (.moduleVoltage, 12.36, "12.4"),
+    ] as [(Sensor, Double, String)])
+    func valuesAreFormatted(sensor: Sensor, value: Double, expected: String) {
+        #expect(sensor.text(for: value) == expected)
+    }
+
+    @Test func noValueIsNA() {
+        for sensor in Sensor.allCases {
+            #expect(sensor.text(for: nil) == "N/A", "\(sensor)")
+        }
+    }
+}
