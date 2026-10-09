@@ -9,6 +9,8 @@ nonisolated struct GaugeReading {
     let value: Double?
     let range: GaugeRange
     let units: Units
+    /// Label under the gauge when it is not the sensor's name ("Boost" for the manifold pressure).
+    var name: String? = nil
 
     /// The value to draw; nil while the text is "Stand By" or "N/A" (no needle movement, no fill).
     var number: Double? { text == "Stand By" || text == "N/A" ? nil : value }
@@ -70,7 +72,7 @@ struct AnalogGauge: View {
                 }
             }
             .aspectRatio(1, contentMode: .fit)
-            GaugeName(sensor: reading.sensor)
+            GaugeName(name: reading.name ?? reading.sensor.name)
         }
     }
 
@@ -169,7 +171,7 @@ struct DigitalGauge: View {
     var body: some View {
         VStack(spacing: 8) {
             GaugeValue(reading: reading, size: 64).frame(maxHeight: .infinity)
-            GaugeName(sensor: reading.sensor)
+            GaugeName(name: reading.name ?? reading.sensor.name)
         }
     }
 }
@@ -203,7 +205,7 @@ struct BarGauge: View {
             .frame(width: 36)
             .frame(maxHeight: .infinity)
             GaugeValue(reading: reading, size: 28)
-            GaugeName(sensor: reading.sensor)
+            GaugeName(name: reading.name ?? reading.sensor.name)
         }
     }
 }
@@ -235,7 +237,7 @@ struct ArcGauge: View {
         }
         .aspectRatio(1, contentMode: .fit)
         // The name sits in the opening at the bottom, below the arc's ends.
-        .overlay(alignment: .bottom) { GaugeName(sensor: reading.sensor) }
+        .overlay(alignment: .bottom) { GaugeName(name: reading.name ?? reading.sensor.name) }
     }
 
     private func arc(_ from: Double, _ to: Double) -> some Shape {
@@ -274,10 +276,10 @@ private struct GaugeValue: View {
 
 /// Sensor name below the gauge, outside it: small capitals, spaced out, light grey.
 private struct GaugeName: View {
-    let sensor: Sensor
+    let name: String
 
     var body: some View {
-        Text(sensor.name.uppercased())
+        Text(name.uppercased())
             .font(.system(size: 11, weight: .medium))
             .tracking(1.2)
             .foregroundStyle(Color(white: 0.7))

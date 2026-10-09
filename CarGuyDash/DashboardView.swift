@@ -7,6 +7,8 @@ struct DashboardView: View {
     #if DEBUG
     /// Screenshots: launching with `-openGaugePreview YES` opens the gauge preview directly.
     @State private var openGaugePreview = UserDefaults.standard.bool(forKey: "openGaugePreview")
+    /// Simulator check: `-openLiveGauges YES` opens the live gauges directly.
+    @State private var openLiveGauges = UserDefaults.standard.bool(forKey: "openLiveGauges")
     #endif
 
     var body: some View {
@@ -31,6 +33,7 @@ struct DashboardView: View {
         }
         #if DEBUG
         .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView() }
+        .navigationDestination(isPresented: $openLiveGauges) { LiveGaugesView(scanner: scanner) }
         #endif
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)

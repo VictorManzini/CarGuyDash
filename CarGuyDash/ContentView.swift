@@ -38,6 +38,7 @@ struct ContentView: View {
             Button("Simulate disconnect") { scanner.simulateDisconnect() }
                 .disabled(scanner.simulator == nil || !scanner.isReady)
             NavigationLink("Gauge preview") { GaugePreviewView() }
+            NavigationLink("Live gauges") { LiveGaugesView(scanner: scanner) }
             #endif
 
             HStack {
