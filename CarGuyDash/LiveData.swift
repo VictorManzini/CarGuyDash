@@ -49,6 +49,9 @@ extension BluetoothScanner {
 
     var isPolling: Bool { pollingTask != nil }
 
+    /// Polling is on and Stop was not tapped (`isPolling` stays true while a stopped loop winds down).
+    var wantsPolling: Bool { pollingTask?.isCancelled == false }
+
     func startPolling() {
         guard pollingTask == nil else { return }
         addLog("Start")

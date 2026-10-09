@@ -60,4 +60,34 @@ struct LogTests {
         scanner.restore([]) // a real CBPeripheral cannot be built in a test
         #expect(scanner.log.last?.hasSuffix("State restored by iOS: no adapter in it") == true)
     }
+
+    /// A scanner like a new process of the app would be: same saved settings, polling off.
+    private func relaunched(sharing defaults: UserDefaults) async -> BluetoothScanner {
+        let scanner = BluetoothScanner(defaults: defaults)
+        await scanner.useSimulatedAdapter()
+        return scanner
+    }
+
+    @Test func pollingResumesAfterARestoreOnlyIfItWasOnInTheBackground() async {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+
+        let first = await relaunched(sharing: defaults)
+        first.startPolling()
+        first.setAppPhase(.background) // saved: polling was on
+        first.stopPolling()
+
+        let resumed = await relaunched(sharing: defaults)
+        resumed.restore([])
+        #expect(resumed.isPolling)
+        #expect(resumed.log.contains { $0.hasSuffix("Polling resumed after restore") })
+        resumed.setAppPhase(.background)
+        resumed.stopPolling()
+        resumed.setAppPhase(.active)
+        resumed.setAppPhase(.background) // saved again, now with polling off
+
+        let notResumed = await relaunched(sharing: defaults)
+        notResumed.restore([])
+        #expect(!notResumed.isPolling)
+        #expect(!notResumed.log.contains { $0.hasSuffix("Polling resumed after restore") })
+    }
 }

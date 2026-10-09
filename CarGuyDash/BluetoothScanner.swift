@@ -72,6 +72,9 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     @ObservationIgnored var meterInterval = Duration.seconds(10)
     /// Whether the app is on screen; set by `setAppPhase`.
     private(set) var appPhase: AppPhase
+    private let defaults: UserDefaults
+    /// Saved on the iPhone each time the app goes to the background: was polling on? Read after a restore.
+    private static let pollingWasOnKey = "pollingWasOnInBackground"
     /// One log file per app launch, in the app's Documents folder.
     let logFileURL: URL
     private let timeFormatter = DateFormatter()
@@ -95,6 +98,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     ]
 
     init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         profiles = CarProfiles(defaults: defaults)
         // A background relaunch (state restoration) starts here too, so ask instead of assuming "active".
         appPhase = UIApplication.shared.applicationState == .background ? .background : .active
@@ -142,14 +146,19 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     /// Takes the adapter iOS kept for us as the known one; the usual Bluetooth-on path then connects to it.
+    /// Polling starts again if it was on when the app went to the background (Stop or Disconnect turn it off).
     func restore(_ peripherals: [CBPeripheral]) {
-        guard let peripheral = peripherals.first else {
+        if let peripheral = peripherals.first {
+            addLog("State restored by iOS: \(peripheral.name ?? "adapter") (was already connected: \(peripheral.state == .connected))")
+            adapter = peripheral
+            peripheral.delegate = self
+        } else {
             addLog("State restored by iOS: no adapter in it")
-            return
         }
-        addLog("State restored by iOS: \(peripheral.name ?? "adapter") (was already connected: \(peripheral.state == .connected))")
-        adapter = peripheral
-        peripheral.delegate = self
+        if defaults.bool(forKey: Self.pollingWasOnKey) {
+            addLog("Polling resumed after restore")
+            startPolling() // waits for Ready by itself
+        }
     }
 
     func centralManager(
@@ -423,6 +432,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func setAppPhase(_ phase: AppPhase) {
         guard phase != appPhase else { return }
         if isPolling { addLog(meter.close(in: appPhase)) }
+        if phase == .background { defaults.set(wantsPolling, forKey: Self.pollingWasOnKey) }
         appPhase = phase
         addLog(phase == .background ? "App went to the background" : "App back in the foreground")
     }
