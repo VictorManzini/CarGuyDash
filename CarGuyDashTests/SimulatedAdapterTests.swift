@@ -14,7 +14,7 @@ struct SimulatedAdapterTests {
     @Test func sensorsReadTheCarValues() async throws {
         let (scanner, _) = await connect()
         let expected: [(Sensor, Double)] = [
-            (.oilTemp, 67), (.coolantTemp, 69), (.manifoldPressure, 93), (.intakeAirTemp, 45),
+            (.oilTemp, 67), (.coolantTemp, 69), (.intakeAirTemp, 45),
             (.throttlePosition, 78 * 100 / 255.0),
         ]
         for (sensor, value) in expected {
@@ -27,6 +27,24 @@ struct SimulatedAdapterTests {
             let rpm = try #require(Sensor.rpm.value(from: result.response))
             #expect((750...3000).contains(rpm))
         }
+    }
+
+    @Test func manifoldPressureFollowsTheRPM() async throws {
+        #expect(SimulatedAdapter.manifoldKPa(rpm: 750) == 88)
+        #expect(SimulatedAdapter.manifoldKPa(rpm: 3000) == 190)
+        #expect(SimulatedAdapter.manifoldKPa(rpm: 1875) == 139)
+
+        let (scanner, _) = await connect()
+        for _ in 0..<20 {
+            let rpmResult = try #require(await scanner.run("010C"))
+            let rpm = try #require(Sensor.rpm.value(from: rpmResult.response))
+            let manifoldResult = try #require(await scanner.run("010B"))
+            let manifold = try #require(Sensor.manifoldPressure.value(from: manifoldResult.response))
+            #expect(manifold == Double(SimulatedAdapter.manifoldKPa(rpm: Int(rpm))))
+        }
+        // The atmospheric pressure stays 93 kPa.
+        let atmospheric = try #require(await scanner.run("0133"))
+        #expect(Sensor.barometricPressure.value(from: atmospheric.response) == 93)
     }
 
     @Test func atCommandsAnswer() async throws {

@@ -14,14 +14,17 @@
 - [x] "Stand By" on every gauge while reconnecting (instead of "N/A")
 - [x] Car profile: read the VIN; new car → ask make and model
 - [x] Discover supported sensors on every connection
-- [ ] 🚗 Test: reconnection (ignition off/on), Disconnect, Stand By
+- [ ] 🚗 Test: reconnection (ignition off/on), Disconnect, Stand By — Disconnect and "Car silent" (ignition off) passed; pending: ignition back on, adapter out and back with the iPhone in the car
 
 ## Phase 3 — iPhone screens
 - [ ] Visual prototype of the screens (only when the owner asks)
 - [ ] Home page + gauges page (1 to 8 user-chosen gauges, portrait and landscape)
 - [ ] Gauge editing page (separate, to avoid taps while driving)
+- [x] Boost gauge on the Dashboard (manifold − atmospheric)
+- [x] 🚗 Boost test: 0.01 bar engine off, −0.3 to −0.5 bar at idle, ~0.3 bar on a slope; speed unchanged with `0133` (130–139 per 10 s)
 - [ ] All-sensors page (Car Scanner style)
 - [x] Settings: units (°C/°F, bar/psi/kPa, km/h/mph) — simple screen from the Dashboard gear button
+- [ ] Check the units on screen (can be done at home with the simulated adapter)
 - [ ] Settings: connect on launch, redline alerts
 
 ## Phase 4 — Locked iPhone

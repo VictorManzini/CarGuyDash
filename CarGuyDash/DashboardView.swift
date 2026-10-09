@@ -44,8 +44,10 @@ struct DashboardView: View {
     }
 
     /// Big value, small unit and name. "Stand By" or "N/A" (no number) in grey, without the unit.
+    /// The manifold pressure block shows the turbo (manifold minus atmospheric) as "Boost": same unit and decimals.
     private func block(_ sensor: Sensor, valueSize: CGFloat) -> some View {
-        let value = scanner.liveData.value(for: sensor)
+        let isBoost = sensor == .manifoldPressure
+        let value = isBoost ? scanner.liveData.boost : scanner.liveData.value(for: sensor)
         let hasNumber = scanner.state == .ready && !scanner.carSilent && value != nil
         let text = gaugeText(for: sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
         // "Stand By" is a long word, so it gets a smaller size than a number.
@@ -61,7 +63,7 @@ struct DashboardView: View {
             }
             .lineLimit(1)
             .minimumScaleFactor(0.5)
-            Text(sensor.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(isBoost ? "Boost" : sensor.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)

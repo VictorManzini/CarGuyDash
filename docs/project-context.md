@@ -52,7 +52,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
-- `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data`, `feature/gauges`, `feature/reconnect`, `feature/connect-button`, `feature/stand-by`, `feature/car-profile`, `feature/supported-sensors` and `feature/background-ble` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
+- `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data`, `feature/gauges`, `feature/reconnect`, `feature/connect-button`, `feature/stand-by`, `feature/car-profile`, `feature/supported-sensors`, `feature/background-ble`, `feature/stand-by-size`, `feature/ignition-off`, `feature/units` and `feature/boost` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
 - Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; OBD reading tested in the car (see Next steps 4 and 6).
 - Gatekeeper (`Gatekeeper.swift`) built: allowlist of 10 AT commands (`ATH1` added for headers), service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only path to the adapter: it checks the gatekeeper, then hands the line to the active `AdapterLink` (real or simulated). Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.
@@ -89,6 +89,11 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
    - Disconnect: no reconnection. Connect: works, back to Ready.
    - **iPhone locked: ~120 readings per 10 s** (measurement lines in `background`), against ~135 unlocked.
    - With the ignition off the adapter stays connected (the OBD port has permanent 12 V) and the engine ECU stops answering RPM first.
+8. **Done:** in-car test (2026-10-09 night, approved by the owner) for `feature/ignition-off`, `feature/units` and `feature/boost`:
+   - **Boost:** 0.01 bar with the engine off; −0.3 to −0.5 bar at idle; about 0.3 bar climbing a slope.
+   - **Ignition off:** "Car silent" appeared in the log when the ignition was turned off.
+   - **Speed with `0133` in the loop:** no loss, 130–139 readings per 10 s.
+   - A known car connects without the "Which car is this?" sheet.
 
 ## Branches
 
@@ -100,23 +105,26 @@ All five are merged into `main` (each with `--no-ff`). The first four passed the
 
 Second stack, merged into `main` on 2026-10-09 after the in-car test, in this order, each with `--no-ff`: `feature/connect-button` → `feature/stand-by` → `feature/car-profile` → `feature/supported-sensors` → `feature/background-ble`.
 
+Third stack, merged into `main` on 2026-10-09 (night) after the in-car test, in this order, each with `--no-ff`: `feature/ignition-off` → `feature/units` → `feature/boost`. The local branches were deleted after the merge.
+
 - **`feature/sensors`:** `Sensor` enum with the PIDs the engine ECU supports (name, unit, formula). Decodes only the engine's answer (header `7E8`, needs `ATH1`); tested with the real responses from the car log.
 - **`feature/fake-adapter`:** `AdapterLink` protocol with two versions: `BluetoothLink` (real, the only `writeValue(`) and `SimulatedAdapter` (answers like the car: `7E9` + `7E8` lines with the logged bytes, RPM 750–3000, ~100 ms, occasional `NO DATA`). The gatekeeper stays in front of both. Debug-only "Simulated adapter" button.
 - **`feature/live-data`:** `LiveData` keeps the latest value per sensor; older than 2 s = "N/A". Polling reads 7 sensors in a loop (RPM, oil, coolant, MAP, intake air, throttle, module voltage). Start/Stop buttons.
 - **`feature/gauges`:** Dashboard is the first screen: numbers only, RPM large on top, the rest in a 2-column grid, "N/A" in grey; portrait and landscape. `Sensor.text(for:)` formats values (V with 1 decimal, the rest whole). Screen stays on only while polling. The test screen opens from the "Tests" button.
 - **`feature/reconnect`:** `ConnectionState` (Bluetooth off, searching, connecting, ready, reconnecting), shown at the top of the Dashboard. On a drop: forget the link, every value "N/A", state reconnecting. Reconnects only to the same adapter (iPhone identifier), with no attempt limit. Every connection runs the setup commands (with `ATH1`) before it is ready; polling resumes by itself unless Stop was tapped. Debug "Simulate disconnect" button (back after 3 s).
 
-- **`feature/units`** (stacked on `feature/ignition-off`, merges into `main` with it after the in-car test): three unit choices saved in UserDefaults (`UnitSettings`, `Units.swift`): °C/°F, bar/psi/kPa (all pressure sensors), km/h/mph. Values stay in °C, kPa, km/h; only the text is converted (`Sensor.displayValue`, `displayUnit`, `text(for:units:)`). Decimals: bar 2, psi 1, V 1, the rest 0. "N/A" and "Stand By" do not change. Simple `SettingsView` opened by the gear button on the Dashboard.
+- **`feature/units`** (stacked on `feature/ignition-off`): three unit choices saved in UserDefaults (`UnitSettings`, `Units.swift`): °C/°F, bar/psi/kPa (all pressure sensors), km/h/mph. Values stay in °C, kPa, km/h; only the text is converted (`Sensor.displayValue`, `displayUnit`, `text(for:units:)`). Decimals: bar 2, psi 1, V 1, the rest 0. "N/A" and "Stand By" do not change. Simple `SettingsView` opened by the gear button on the Dashboard.
+- **`feature/boost`** (stacked on `feature/units`): the Dashboard block "Manifold pressure" became "Boost" = manifold (0B) − atmospheric (0133), in kPa inside, shown in the chosen pressure unit (bar 2, psi 1, kPa 0); negative = vacuum. The manifold is still polled, just not shown. `0133` is asked once when polling starts (and again after a connection drop), then every 30 s (`pollBarometricPressureIfDue`, not part of the silence check or the readings meter); it lives 60 s in `LiveData` (the other sensors 2 s). Missing or old manifold/atmospheric = "N/A", never a default atmospheric value. The simulated adapter answers `0133` with `5D` (93 kPa) and makes the manifold follow the drawn RPM in a straight line (750 rpm = 88 kPa, 3000 rpm = 190 kPa), so Boost swings from about −0.05 to +0.97 bar. Stand By, N/A and "Ignition off?" apply as before.
 
 ## Pending in-car tests (owner)
 
 In-car tests are batched at the end of Phase 2 (owner's decision). The Phase 2 test stays open in the roadmap until these pass.
 
 - [ ] **Connection drop** (`feature/reconnect` and `feature/stand-by`): with polling on, pull the adapter out of the port → "Reconnecting" and "Stand By" on the gauges; plug it back → "Ready" and the values return by themselves.
-- [ ] **Connect on an already known car** (`feature/car-profile`): Connect does not show the "Which car is this?" sheet. Can be tested at home with the simulated adapter (save the car, Disconnect, Connect).
 - [ ] **Sheet swiped down** (`feature/car-profile`): swiping the sheet down leaves "Unknown car" and it asks again on the next connection. Not covered by the 2026-10-09 test; can be tested at home with the simulated adapter.
-- [ ] **Ignition off** (`feature/ignition-off`, not merged into `main` yet): with polling on, turn the ignition off → after about 2 s "Ignition off?" at the top and "Stand By" on every gauge, the state still "Ready" and the log shows "Car silent (no readings for 2 s)"; turn the ignition on again → numbers and "Ready" come back and the log shows "Car answering again".
-- [ ] **Units** (`feature/units`, not merged into `main` yet): in Settings pick °F, psi and mph → Dashboard oil/coolant in °F, MAP in psi (idle ~12.8), speed in mph while driving; close and reopen the app → the choices are still there. Can be tested at home with the simulated adapter.
+- [ ] **Ignition back on** (`feature/ignition-off`): the ignition-off half passed ("Car silent" logged). Still to do: turn the ignition on again → numbers and "Ready" come back and the log shows "Car answering again".
+- [ ] **Adapter out and back with the iPhone inside the car** (`feature/reconnect`): pull the adapter out and plug it back with the iPhone in the car → it reconnects by itself.
+- [ ] **Units on screen** (`feature/units`): in Settings pick °F, psi and mph → Dashboard oil/coolant in °F, MAP in psi (idle ~12.8), speed in mph while driving; close and reopen the app → the choices are still there. Can be tested at home with the simulated adapter.
 - [ ] **State restoration by iOS** (`feature/background-ble`): iOS closes the app in the background and relaunches it → "State restored by iOS" in the log, same adapter again, and polling resumes ("Polling resumed after restore") if it was on.
 
 ## Open questions
@@ -124,5 +132,4 @@ In-car tests are batched at the end of Phase 2 (owner's decision). The Phase 2 t
 - How long without a reading counts as "N/A" (measured: ~12–13 requests/s in total, shared by all PIDs being read).
 - Whether Apple considers the Connect button on CarPlay a "setting".
 - CarPlay template item limits vs. up to 8 gauges.
-- Whether the N55 exposes boost pressure through a standard PID.
 - Background BLE with a locked iPhone via `bluetooth-central` [TO CONFIRM].

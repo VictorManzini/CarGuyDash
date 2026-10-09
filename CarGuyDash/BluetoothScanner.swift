@@ -73,6 +73,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// PIDs the engine ECU supports, discovered on every connection (not saved).
     /// Nil: discovery failed or not done yet, so polling uses the fixed list.
     private(set) var supportedPIDs: Set<Int>?
+    /// When the atmospheric pressure was last asked; nil = ask on the next loop. See `pollBarometricPressureIfDue`.
+    @ObservationIgnored var baroAskedAt: Date?
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
     /// Counts the valid readings of the current measurement window (see `ReadingMeter`).
@@ -276,6 +278,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         responseBuffer = ""
         finishCommand(with: nil)
         liveData.clear()
+        baroAskedAt = nil // the atmospheric value is gone too, so ask again
         state = newState
     }
 

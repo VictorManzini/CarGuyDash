@@ -11,6 +11,8 @@ final class LiveData {
 
     /// A value older than this counts as "N/A".
     static let staleAfter: TimeInterval = 2
+    /// The atmospheric pressure changes slowly and is asked only every 30 s, so it lives longer.
+    static let barometricStaleAfter: TimeInterval = 60
 
     private(set) var readings: [Sensor: Reading] = [:]
     /// The clock. Tests replace it so they do not have to wait for real.
@@ -27,10 +29,18 @@ final class LiveData {
         readings = [:]
     }
 
-    /// The value, or nil ("N/A") if there is none or it is older than `staleAfter`.
+    /// The value, or nil ("N/A") if there is none or it is too old (`staleAfter`, or `barometricStaleAfter`).
     func value(for sensor: Sensor) -> Double? {
-        guard let reading = readings[sensor], now().timeIntervalSince(reading.time) <= Self.staleAfter else { return nil }
+        let limit = sensor == .barometricPressure ? Self.barometricStaleAfter : Self.staleAfter
+        guard let reading = readings[sensor], now().timeIntervalSince(reading.time) <= limit else { return nil }
         return reading.value
+    }
+
+    /// Turbo pressure in kPa: manifold minus atmospheric. Negative = vacuum.
+    /// Nil ("N/A") if either is missing or old: there is never a made-up atmospheric value.
+    var boost: Double? {
+        guard let manifold = value(for: .manifoldPressure), let atmospheric = value(for: .barometricPressure) else { return nil }
+        return manifold - atmospheric
     }
 }
 
@@ -47,6 +57,21 @@ extension BluetoothScanner {
         return Self.polledSensors.filter { supportedPIDs.contains(Int($0.rawValue, radix: 16) ?? -1) }
     }
 
+    /// How often the atmospheric pressure (0133) is asked. Once at the start, then this often,
+    /// so the other sensors do not slow down.
+    static let barometricEvery: TimeInterval = 30
+
+    /// Asks 0133 if it was never asked or the last ask was `barometricEvery` ago. Not asked if the car lacks it.
+    /// Not part of the silence check or the readings meter: it only feeds the turbo gauge.
+    func pollBarometricPressureIfDue() async {
+        let now = liveData.now()
+        guard supportedPIDs?.contains(0x33) ?? true,
+              baroAskedAt.map({ now.timeIntervalSince($0) >= Self.barometricEvery }) ?? true else { return }
+        baroAskedAt = now
+        let result = await run("01" + Sensor.barometricPressure.rawValue, timeout: .seconds(1))
+        liveData.record(result.flatMap { Sensor.barometricPressure.value(from: $0.response) }, for: .barometricPressure)
+    }
+
     var isPolling: Bool { pollingTask != nil }
 
     /// Polling is on and Stop was not tapped (`isPolling` stays true while a stopped loop winds down).
@@ -59,6 +84,7 @@ extension BluetoothScanner {
             addLog("=== Polling started ===")
             meter = ReadingMeter()
             resetSilence()
+            baroAskedAt = nil // asked right away at the start
             // Only measures: polling never waits for it. In the background it may fire late; the line says by how much.
             let meterTask = Task {
                 while !Task.isCancelled {
@@ -75,6 +101,7 @@ extension BluetoothScanner {
                     await waitForStateChange()
                     continue
                 }
+                await pollBarometricPressureIfDue()
                 for sensor in sensors where !Task.isCancelled && isReady {
                     // Short timeout: a sensor that does not answer must not hold up the others.
                     let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
