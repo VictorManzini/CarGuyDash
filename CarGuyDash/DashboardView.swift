@@ -44,10 +44,13 @@ struct DashboardView: View {
     private func block(_ sensor: Sensor, valueSize: CGFloat) -> some View {
         let value = scanner.liveData.value(for: sensor)
         let hasNumber = scanner.state == .ready && value != nil
+        let text = gaugeText(for: sensor, state: scanner.state, value: value)
+        // "Stand By" is a long word, so it gets a smaller size than a number.
+        let size = text == "Stand By" ? valueSize * 0.55 : valueSize
         return VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(gaugeText(for: sensor, state: scanner.state, value: value))
-                    .font(.system(size: valueSize, weight: .semibold, design: .rounded).monospacedDigit())
+                Text(text)
+                    .font(.system(size: size, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(hasNumber ? .primary : .secondary)
                 if hasNumber {
                     Text(sensor.unit).font(.headline).foregroundStyle(.secondary)
