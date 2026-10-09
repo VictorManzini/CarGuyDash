@@ -66,7 +66,7 @@ struct SensorTextTests {
         (.oilTemp, 67.0, "67"),
         (.coolantTemp, 69.4, "69"),
         (.intakeAirTemp, -7.0, "-7"),
-        (.manifoldPressure, 93.0, "93"),
+        (.manifoldPressure, 93.0, "0.93"), // bar is the default pressure unit
         (.throttlePosition, 78 * 100 / 255.0, "31"),
         (.moduleVoltage, 14.1, "14.1"),
         (.moduleVoltage, 12.36, "12.4"),

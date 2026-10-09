@@ -160,11 +160,16 @@ extension Sensor {
 }
 
 extension Sensor {
-    /// The value as gauge text, without the unit: volts with 1 decimal, everything else whole.
-    /// Nil (no reading) gives "N/A".
+    /// The value as gauge text, without the unit, in the chosen units.
+    /// Decimals: bar 2, psi 1, volts 1, everything else whole. Nil (no reading) gives "N/A".
     /// Other units (λ, g/s) are whole numbers too, for now: none of them is on a gauge yet.
-    func text(for value: Double?) -> String {
+    func text(for value: Double?, units: Units = Units()) -> String {
         guard let value else { return "N/A" }
-        return String(format: unit == "V" ? "%.1f" : "%.0f", value)
+        let decimals = switch displayUnit(units) {
+        case "bar": 2
+        case "psi", "V": 1
+        default: 0
+        }
+        return String(format: "%.\(decimals)f", displayValue(value, units))
     }
 }
