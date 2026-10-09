@@ -20,14 +20,24 @@ struct BluetoothLink: AdapterLink {
     }
 }
 
+/// Where the connection to the adapter stands. The raw value is shown on screen.
+enum ConnectionState: String {
+    case bluetoothOff = "Bluetooth off"
+    case searching = "Searching"
+    case connecting = "Connecting"
+    case ready = "Ready"
+    case reconnecting = "Reconnecting"
+}
+
 /// Scans for the OBD-II adapter, connects to it, lists its services and characteristics,
 /// and sends commands through the gatekeeper. Everything is logged on screen and to a file.
 @Observable
 final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     /// Every log line of this run, shown on screen and saved to `logFileURL`.
     private(set) var log: [String] = []
-    /// True once notifications are on and the adapter can receive commands.
-    private(set) var isReady = false
+    private(set) var state = ConnectionState.bluetoothOff
+    /// True once the adapter can receive commands.
+    var isReady: Bool { state == .ready }
     /// True while a car test is running.
     var isTesting = false
     /// Latest sensor values, filled by the polling loop.
@@ -42,6 +52,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
     private var link: AdapterLink?
+    /// Set while the simulated adapter is in use; the real Bluetooth is then ignored.
+    private(set) var simulator: SimulatedAdapter?
     private var notifyCharacteristic: CBCharacteristic?
     private var responseBuffer = ""
 
@@ -67,11 +79,23 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     // MARK: - Central
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard simulator == nil else { return }
         switch central.state {
         case .poweredOn:
             addLog("Bluetooth: poweredOn")
+            // Bluetooth came back: only the same adapter, found by the iPhone's identifier for it.
+            if let known = adapter, let peripheral = central.retrievePeripherals(withIdentifiers: [known.identifier]).first {
+                addLog("Bluetooth back on, reconnecting to \(peripheral.name ?? "adapter")")
+                state = .reconnecting
+                adapter = peripheral
+                peripheral.delegate = self
+                central.connect(peripheral)
+                return
+            }
+            state = .searching
             // nil = any service; each device is reported once (no duplicates by default).
             central.scanForPeripherals(withServices: nil)
+            return
         case .poweredOff: addLog("Bluetooth: poweredOff")
         case .unauthorized: addLog("Bluetooth: unauthorized")
         case .unsupported: addLog("Bluetooth: unsupported")
@@ -79,6 +103,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         case .unknown: addLog("Bluetooth: unknown")
         @unknown default: addLog("Bluetooth: new state \(central.state.rawValue)")
         }
+        connectionLost()
+        state = .bluetoothOff
     }
 
     func centralManager(
@@ -90,9 +116,10 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
         addLog("Found: \(name ?? "(no name)") RSSI: \(RSSI) dBm")
 
-        guard adapter == nil, link == nil, let name, name.contains("IOS-Vlink") else { return }
+        guard adapter == nil, simulator == nil, let name, name.contains("IOS-Vlink") else { return }
         addLog("Adapter found, connecting to \(name)")
         central.stopScan()
+        state = .connecting
         adapter = peripheral // CoreBluetooth drops the connection if nobody keeps a reference.
         peripheral.delegate = self
         central.connect(peripheral)
@@ -105,12 +132,13 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         addLog("Failed to connect: \(error?.localizedDescription ?? "unknown error")")
+        reconnect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         addLog("Disconnected: \(error?.localizedDescription ?? "no error")")
-        isReady = false
-        finishCommand(with: nil)
+        connectionLost()
+        reconnect(peripheral)
     }
 
     // MARK: - Peripheral
@@ -147,7 +175,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         if let error { addLog("Enabling notifications failed: \(error.localizedDescription)"); return }
         guard characteristic == notifyCharacteristic, characteristic.isNotifying else { return }
         addLog("Notifications on for \(characteristic.uuid)")
-        isReady = true
+        Task { await prepare() }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
@@ -171,18 +199,64 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         if let error { addLog("Write failed: \(error.localizedDescription)") }
     }
 
+    // MARK: - Connection
+
+    /// The link is gone: forget it, drop the command in progress, every value becomes N/A.
+    private func connectionLost() {
+        link = nil
+        notifyCharacteristic = nil
+        responseBuffer = ""
+        finishCommand(with: nil)
+        liveData.clear()
+        state = .reconnecting
+    }
+
+    /// Asks CoreBluetooth to connect to the same adapter again. A pending connect never times out,
+    /// so this keeps trying for as long as it takes.
+    private func reconnect(_ peripheral: CBPeripheral) {
+        guard peripheral == adapter, centralManager.state == .poweredOn else { return }
+        addLog("Reconnecting to \(peripheral.name ?? "adapter")")
+        centralManager.connect(peripheral)
+    }
+
+    /// Runs the setup commands (with ATH1) on every new connection, then marks it ready.
+    /// Polling, if on, picks up again by itself once the state is ready.
+    private func prepare() async {
+        for command in Self.setupCommands {
+            _ = await run(command)
+            guard link != nil else { return } // dropped again during setup
+        }
+        state = .ready
+        addLog("Ready")
+    }
+
     // MARK: - Helpers
 
     /// Stops looking for the real adapter and talks to the simulated one instead.
     /// Returns it so tests can see what it received.
     @discardableResult
-    func useSimulatedAdapter() -> SimulatedAdapter {
+    func useSimulatedAdapter() async -> SimulatedAdapter {
         centralManager.stopScan()
         let simulated = SimulatedAdapter { [weak self] in self?.receive($0) }
+        simulator = simulated
         link = simulated
-        isReady = true
+        state = .connecting
         addLog("Using the simulated adapter")
+        await prepare()
         return simulated
+    }
+
+    /// Drops the simulated connection and brings it back after `downtime`, like the real adapter would.
+    func simulateDisconnect(for downtime: Duration = .seconds(3)) {
+        guard let simulator, isReady else { return }
+        addLog("Disconnected (simulated)")
+        connectionLost()
+        Task {
+            try? await Task.sleep(for: downtime)
+            addLog("Reconnected (simulated)")
+            link = simulator
+            await prepare()
+        }
     }
 
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
@@ -219,7 +293,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             addLog("BLOCKED by gatekeeper: \(command.debugDescription)")
             return false
         }
-        guard let link, isReady else {
+        guard let link else {
             addLog("Not connected, not sent: \(command)")
             return false
         }

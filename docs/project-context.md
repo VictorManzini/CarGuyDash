@@ -50,10 +50,10 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
-- `.gitignore` created. `bluetooth-scanner` and `feature/car-test-mode` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
+- `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data` and `feature/gauges` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
-- Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; no OBD command sent yet.
-- Gatekeeper (`Gatekeeper.swift`) built: allowlist of 10 AT commands (`ATH1` added for headers), service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only write path. Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.
+- Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; OBD reading tested in the car (see Next steps 4 and 6).
+- Gatekeeper (`Gatekeeper.swift`) built: allowlist of 10 AT commands (`ATH1` added for headers), service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only path to the adapter: it checks the gatekeeper, then hands the line to the active `AdapterLink` (real or simulated). Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.
 - Car test mode (`CarTests.swift`, branch `feature/car-test-mode`, tested in the car): works without the Mac. The log is shown on screen and saved to `Documents/log-<date>_<time>.txt` (one file per launch), with Copy and Share buttons. **Test A:** setup AT + `ATRV`, support blocks `0100`/`0120`/… while the last bit says the next block exists, then `0902`, `010C`, `015C`, `010B`, `0105`, `010D`, `0111`, `010F`, `0104`; raw response + time each. **Test B:** `010C` for 10 s, then the `010C`/`010B`/`015C`/`0105` cycle for 10 s; readings per second per PID. 10 s timeout per command. No decoding yet.
 
 ## Known pitfalls
@@ -74,12 +74,31 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
    - Supported PIDs, engine ECU: `01 03 04 05 06 07 0B 0C 0D 0E 0F 10 11 13 15 1C 1F 20 21 23 2E 2F 30 31 33 34 3C 40 41 42 43 44 45 46 47 49 4A 4C 51 56 5C 60`; `0160` block: `68`. Second ECU: `01 04 05 0C 0D 11 1C 20 21 30 31 40 42`.
    - Oil temperature `5C` and manifold pressure `0B` answer (MAP 93 kPa with the engine off = atmospheric). VIN `0902` answers (multi-frame, 17 characters).
    - Speed: `010C` alone 10.2 readings/s (~100 ms each); a 4-PID cycle gives 3.0/s per PID (~12 requests/s in total).
-   - Still to see: a real RPM with the engine running.
-5. Decode the responses, then PID polling + gauges on the iPhone screen.
+5. **Done:** decode the responses, PID polling + numbers-only Dashboard on the iPhone (branches `feature/sensors` to `feature/gauges`, merged into `main`).
+6. **Done:** in-car test with the **engine running** (2026-10-08, approved by the owner):
+   - `ATH1` shows the headers: `7E8` = engine, `7E9` = second ECU (probably the gearbox). The second ECU answers `0C`, `05`, `0D`, `11`, `04` with the same values; it does not answer `5C`, `0B`, `0F`.
+   - The Dashboard RPM matched the tachometer: `410C0BA8` = 746 rpm at idle. Oil (`5C`) and coolant (`05`) shown on the Dashboard.
+   - Test A at idle: oil 101 °C, coolant 96 °C, MAP 88 kPa, intake air 47 °C, throttle 15 %, engine load 13 %, speed 0, `ATRV` 13.7 V. `ATZ` takes ~930 ms; other AT commands ~30 ms; PIDs 90–120 ms.
+   - Test B: `010C` alone 11.5 readings/s; the 4-PID cycle gives 3.3/s per PID (~13 requests/s in total).
+   - Not tested in the car yet: reconnection (`feature/reconnect`). At the end of the log the adapter dropped ("connection has timed out"), then Bluetooth went off and on, and that path wrote nothing to the log; a log line was added for it.
+
+## Branches
+
+Stacked, each created from the previous one (approved exception to "branch from `main`"):
+
+`feature/sensors` → `feature/fake-adapter` → `feature/live-data` → `feature/gauges` → `feature/reconnect`
+
+The first four passed the in-car test and are merged into `main` (each with `--no-ff`). `feature/reconnect` is up to date with `main` and **waits for its own in-car test** (drop and reconnection).
+
+- **`feature/sensors`:** `Sensor` enum with the PIDs the engine ECU supports (name, unit, formula). Decodes only the engine's answer (header `7E8`, needs `ATH1`); tested with the real responses from the car log.
+- **`feature/fake-adapter`:** `AdapterLink` protocol with two versions: `BluetoothLink` (real, the only `writeValue(`) and `SimulatedAdapter` (answers like the car: `7E9` + `7E8` lines with the logged bytes, RPM 750–3000, ~100 ms, occasional `NO DATA`). The gatekeeper stays in front of both. Debug-only "Simulated adapter" button.
+- **`feature/live-data`:** `LiveData` keeps the latest value per sensor; older than 2 s = "N/A". Polling reads 7 sensors in a loop (RPM, oil, coolant, MAP, intake air, throttle, module voltage). Start/Stop buttons.
+- **`feature/gauges`:** Dashboard is the first screen: numbers only, RPM large on top, the rest in a 2-column grid, "N/A" in grey; portrait and landscape. `Sensor.text(for:)` formats values (V with 1 decimal, the rest whole). Screen stays on only while polling. The test screen opens from the "Tests" button.
+- **`feature/reconnect`:** `ConnectionState` (Bluetooth off, searching, connecting, ready, reconnecting), shown at the top of the Dashboard. On a drop: forget the link, every value "N/A", state reconnecting. Reconnects only to the same adapter (iPhone identifier), with no attempt limit. Every connection runs the setup commands (with `ATH1`) before it is ready; polling resumes by itself unless Stop was tapped. Debug "Simulate disconnect" button (back after 3 s).
 
 ## Open questions
 
-- How long without a reading counts as "N/A" (measured: ~12 requests/s in total, shared by all PIDs being read).
+- How long without a reading counts as "N/A" (measured: ~12–13 requests/s in total, shared by all PIDs being read).
 - Whether Apple considers the Connect button on CarPlay a "setting".
 - CarPlay template item limits vs. up to 8 gauges.
 - Whether the N55 exposes boost pressure through a standard PID.

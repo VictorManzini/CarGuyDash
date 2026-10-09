@@ -22,6 +22,11 @@ final class LiveData {
         readings[sensor] = Reading(value: value, time: now())
     }
 
+    /// Forgets every value: they all show "N/A".
+    func clear() {
+        readings = [:]
+    }
+
     /// The value, or nil ("N/A") if there is none or it is older than `staleAfter`.
     func value(for sensor: Sensor) -> Double? {
         guard let reading = readings[sensor], now().timeIntervalSince(reading.time) <= Self.staleAfter else { return nil }
@@ -41,10 +46,13 @@ extension BluetoothScanner {
         guard pollingTask == nil else { return }
         pollingTask = Task {
             addLog("=== Polling started ===")
-            for command in Self.setupCommands { _ = await run(command) }
-            // Stops on Stop or when the adapter disconnects (otherwise it would spin, logging "Not connected").
-            while !Task.isCancelled && isReady {
-                for sensor in Self.polledSensors where !Task.isCancelled {
+            // Runs until Stop. While the connection is down it waits, then reads again once ready.
+            while !Task.isCancelled {
+                guard isReady else {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    continue
+                }
+                for sensor in Self.polledSensors where !Task.isCancelled && isReady {
                     // Short timeout: a sensor that does not answer must not hold up the others.
                     let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
                     liveData.record(result.flatMap { sensor.value(from: $0.response) }, for: sensor)

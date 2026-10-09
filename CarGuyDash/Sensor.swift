@@ -162,7 +162,7 @@ extension Sensor {
 extension Sensor {
     /// The value as gauge text, without the unit: volts with 1 decimal, everything else whole.
     /// Nil (no reading) gives "N/A".
-    // ponytail: whole numbers for every other unit too; give λ and g/s decimals when they get a gauge.
+    /// Other units (λ, g/s) are whole numbers too, for now: none of them is on a gauge yet.
     func text(for value: Double?) -> String {
         guard let value else { return "N/A" }
         return String(format: unit == "V" ? "%.1f" : "%.0f", value)

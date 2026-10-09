@@ -9,6 +9,7 @@ struct DashboardView: View {
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
             ScrollView {
                 VStack(spacing: 12) {
+                    Text(scanner.state.rawValue).font(.caption).foregroundStyle(.secondary)
                     block(.rpm, valueSize: 96)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         ForEach(BluetoothScanner.polledSensors.filter { $0 != .rpm }, id: \.self) { sensor in
