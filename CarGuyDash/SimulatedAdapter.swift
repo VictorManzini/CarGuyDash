@@ -8,6 +8,8 @@ final class SimulatedAdapter: AdapterLink {
     private(set) var received: [String] = []
     /// Chance that a PID answers "NO DATA", like the real car now and then.
     var noDataChance = 0.05
+    /// PIDs (two hex digits) that always answer "NO DATA", like one sensor the car does not answer.
+    var silentPIDs: Set<String> = []
     /// False: 0902 answers "NO DATA", like a car that does not give its VIN.
     var answersVIN = true
     /// False: the support blocks (0100, 0120...) answer "NO DATA", like a car that fails to list its PIDs.
@@ -62,7 +64,7 @@ final class SimulatedAdapter: AdapterLink {
         if command.hasPrefix("01"), let mask = supportMasks[pid] {
             return answersSupportedPIDs ? reply(pid: pid, data: mask, secondECU: pid != "60") : "NO DATA"
         }
-        guard command.hasPrefix("01"), let bytes = bytes(for: pid), Double.random(in: 0..<1) >= noDataChance else {
+        guard command.hasPrefix("01"), !silentPIDs.contains(pid), let bytes = bytes(for: pid), Double.random(in: 0..<1) >= noDataChance else {
             return "NO DATA"
         }
         return reply(pid: pid, data: bytes, secondECU: true)

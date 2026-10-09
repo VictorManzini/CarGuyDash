@@ -42,9 +42,18 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         didSet {
             guard state != oldValue else { return }
             addLog("State: \(oldValue.rawValue) → \(state.rawValue)")
+            resetSilence()
             wakeStateWaiter()
         }
     }
+    /// True when the connection is up but no sensor gave a valid reading for longer than `silenceAfter`
+    /// (ignition off: the adapter stays powered, the engine ECU stops answering). Not a `ConnectionState`.
+    private(set) var carSilent = false
+    /// What the top of the Dashboard shows: the connection state, or "Ignition off?" while the car is silent.
+    var statusText: String { carSilent ? "Ignition off?" : state.rawValue }
+    /// How long without any valid reading counts as silence. Tests shorten it.
+    @ObservationIgnored var silenceAfter = Duration.seconds(2)
+    @ObservationIgnored private var lastValidReading = ContinuousClock.now
     /// True once the adapter can receive commands.
     var isReady: Bool { state == .ready }
     /// True while a car test is running.
@@ -443,6 +452,29 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         print(line)
         log.append(line)
         logFile?.write(Data((line + "\n").utf8))
+    }
+
+    /// Called after every polling attempt. One valid reading ends the silence; the silence starts when
+    /// the connection is ready and nothing valid came for longer than `silenceAfter`.
+    /// A single sensor that does not answer while the others do never gets here: it only stays "N/A".
+    func noteReading(valid: Bool) {
+        let now = ContinuousClock.now
+        if valid {
+            lastValidReading = now
+            if carSilent {
+                carSilent = false
+                addLog("Car answering again")
+            }
+        } else if isReady, !carSilent, now - lastValidReading > silenceAfter {
+            carSilent = true
+            addLog("Car silent (no readings for 2 s)")
+        }
+    }
+
+    /// A new start (connection state change or polling start): not silent, and the clock starts now.
+    func resetSilence() {
+        carSilent = false
+        lastValidReading = .now
     }
 
     /// Sends one command and waits for the ">" prompt.
