@@ -19,24 +19,33 @@ nonisolated struct GaugeReading {
 private let arcStart = 140.0
 private let arcSweep = 260.0
 
-extension GaugeColor {
-    var color: Color {
-        switch self {
-        case .blue: .blue
-        case .green: .green
-        case .yellow: .yellow
-        case .red: .red
-        }
+/// The empty part of the bar and arc: very dark grey, opaque.
+private let trackColor = Color(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255)
+private let fillAnimation = Animation.easeOut(duration: 0.25)
+
+extension Color {
+    init(rgb: (r: Double, g: Double, b: Double)) {
+        self.init(red: rgb.r / 255, green: rgb.g / 255, blue: rgb.b / 255)
     }
+}
+
+extension GaugeColor {
+    var color: Color { Color(rgb: rgb) }
 }
 
 extension GaugeRange {
     var gradientStops: [Gradient.Stop] { stops.map { Gradient.Stop(color: $0.color.color, location: $0.at) } }
 }
 
+extension GaugeReading {
+    /// The gradient's color where the fill ends, for the glow at its tip.
+    var tipColor: Color { Color(rgb: range.rgb(at: number ?? range.min)) }
+}
+
 // MARK: - Analog
 
-/// Old racing tachometer: dark face, numbers around the arc, red redline band, red needle.
+/// Old racing tachometer: dark face, numbers around the arc, orange band up to the redline,
+/// red band from it, red needle.
 struct AnalogGauge: View {
     let reading: GaugeReading
 
@@ -44,18 +53,20 @@ struct AnalogGauge: View {
         VStack(spacing: 8) {
             ZStack {
                 Canvas { context, size in drawDial(in: &context, size: size) }
-                Needle()
-                    .fill(.red)
-                    .rotationEffect(.degrees(arcStart + arcSweep * reading.range.fraction(reading.number ?? reading.range.min)))
-                    .animation(.easeOut(duration: 0.25), value: reading.number)
-                    .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
-                    // Hidden without a number: red on red would hide the "Stand By" / "N/A" text.
-                    .opacity(reading.number == nil ? 0 : 1)
-                Circle().fill(Color(white: 0.15)).frame(width: 14).overlay(Circle().stroke(Color(white: 0.35), lineWidth: 1))
+                // Needle and hub hidden without a number: they would cross the "Stand By" / "N/A" text.
+                Group {
+                    Needle()
+                        .fill(GaugeColor.red.color)
+                        .shadow(color: GaugeColor.red.color.opacity(0.6), radius: 3)
+                        .rotationEffect(.degrees(arcStart + arcSweep * reading.range.fraction(reading.number ?? reading.range.min)))
+                        .animation(fillAnimation, value: reading.number)
+                    Circle().fill(.black).frame(width: 14).overlay(Circle().stroke(Color(white: 0.35), lineWidth: 1))
+                }
+                .opacity(reading.number == nil ? 0 : 1)
                 if reading.number == nil {
                     // Stand By / N/A: near-transparent grey layer + red text in the center.
                     Circle().fill(.gray.opacity(0.35))
-                    Text(reading.text).font(.headline).foregroundStyle(.red)
+                    Text(reading.text).font(.headline).foregroundStyle(GaugeColor.red.color)
                 }
             }
             .aspectRatio(1, contentMode: .fit)
@@ -75,20 +86,24 @@ struct AnalogGauge: View {
         func circle(_ radius: CGFloat) -> Path {
             Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius))
         }
-        context.fill(circle(r), with: .radialGradient(Gradient(colors: [Color(white: 0.16), Color(white: 0.04)]),
+        context.fill(circle(r), with: .radialGradient(Gradient(colors: [Color(white: 0.1), Color(white: 0.02)]),
                                                       center: center, startRadius: 0, endRadius: r))
-        context.stroke(circle(r * 0.975), with: .linearGradient(
+        // Thin metallic rim: mid grey at the top left fading to dark grey at the bottom right.
+        context.stroke(circle(r * 0.985), with: .linearGradient(
             Gradient(colors: [Color(white: 0.55), Color(white: 0.2)]),
-            startPoint: CGPoint(x: center.x, y: center.y - r), endPoint: CGPoint(x: center.x, y: center.y + r)), lineWidth: r * 0.05)
+            startPoint: CGPoint(x: center.x - r, y: center.y - r), endPoint: CGPoint(x: center.x + r, y: center.y + r)),
+                       lineWidth: r * 0.03)
 
-        // Redline band: from the redline to the end of the scale (none when redline = max).
+        // Bands on the outer edge: orange from normalHigh to the redline, red from the redline to max.
+        // None when they have no width (other sensors: normalHigh = redline = max).
         let display = reading.range.converted(for: reading.sensor, reading.units)
+        let orangeFrom = reading.range.fraction(reading.range.normalHigh)
         let redFrom = reading.range.fraction(reading.range.redline)
-        if redFrom < 1 {
+        for (from, to, color) in [(orangeFrom, redFrom, GaugeColor.orange), (redFrom, 1, .red)] where from < to {
             var band = Path()
-            band.addArc(center: center, radius: r * 0.905, startAngle: .degrees(arcStart + arcSweep * redFrom),
-                        endAngle: .degrees(arcStart + arcSweep), clockwise: false)
-            context.stroke(band, with: .color(.red), lineWidth: r * 0.05)
+            band.addArc(center: center, radius: r * 0.905, startAngle: .degrees(arcStart + arcSweep * from),
+                        endAngle: .degrees(arcStart + arcSweep * to), clockwise: false)
+            context.stroke(band, with: .color(color.color), lineWidth: r * 0.045)
         }
 
         // Ticks and numbers, in the chosen units. Big scales (RPM) are labelled in thousands.
@@ -101,24 +116,24 @@ struct AnalogGauge: View {
         while value <= display.max + minor / 1000 {
             let fraction = (value - display.min) / span
             let isMajor = abs((value / step).rounded() * step - value) < minor / 1000
-            let color: Color = fraction >= redFrom - 0.0001 && redFrom < 1 ? .red : .white
+            let color = fraction >= redFrom - 0.0001 && redFrom < 1 ? GaugeColor.red.color : Color(white: 0.88)
             var tick = Path()
             tick.move(to: point(fraction, r * 0.86))
-            tick.addLine(to: point(fraction, r * (isMajor ? 0.72 : 0.79)))
-            context.stroke(tick, with: .color(color.opacity(isMajor ? 1 : 0.7)), lineWidth: isMajor ? r * 0.025 : r * 0.012)
+            tick.addLine(to: point(fraction, r * (isMajor ? 0.73 : 0.8)))
+            context.stroke(tick, with: .color(color.opacity(isMajor ? 1 : 0.6)), lineWidth: isMajor ? r * 0.018 : r * 0.008)
             if isMajor {
                 let label = Text(String(format: "%g", value / scale))
-                    .font(.system(size: r * 0.15, weight: .bold, design: .rounded))
+                    .font(.system(size: r * 0.14, weight: .semibold).monospacedDigit())
                     .foregroundStyle(color)
-                context.draw(label, at: point(fraction, r * 0.56))
+                context.draw(label, at: point(fraction, r * 0.58))
             }
             value += minor
         }
 
         let unit = reading.sensor.displayUnit(reading.units)
         context.draw(Text(scale == 1000 ? "×1000 \(unit)" : unit)
-                        .font(.system(size: r * 0.1, weight: .medium))
-                        .foregroundStyle(Color(white: 0.6)),
+                        .font(.system(size: r * 0.09, weight: .medium))
+                        .foregroundStyle(Color(white: 0.55)),
                      at: CGPoint(x: center.x, y: center.y + r * 0.42))
     }
 
@@ -167,15 +182,23 @@ struct BarGauge: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            let bar = RoundedRectangle(cornerRadius: 8)
-            ZStack {
-                bar.fill(Color.white.opacity(0.1))
-                LinearGradient(stops: reading.range.gradientStops, startPoint: .bottom, endPoint: .top)
-                    .mask {
-                        Rectangle().scaleEffect(x: 1, y: reading.number.map(reading.range.fraction) ?? 0, anchor: .bottom)
+            GeometryReader { geo in
+                let height = geo.size.height * (reading.number.map(reading.range.fraction) ?? 0)
+                ZStack(alignment: .bottom) {
+                    trackColor
+                    LinearGradient(stops: reading.range.gradientStops, startPoint: .bottom, endPoint: .top)
+                        .mask(alignment: .bottom) { Rectangle().frame(height: height) }
+                    if reading.number != nil {
+                        // Soft glow in the gradient's own color at the top of the fill.
+                        Rectangle()
+                            .fill(reading.tipColor)
+                            .frame(height: 2)
+                            .shadow(color: reading.tipColor, radius: 4)
+                            .offset(y: -max(height - 2, 0))
                     }
-                    .clipShape(bar)
-                    .animation(.easeOut(duration: 0.25), value: reading.number)
+                }
+                .animation(fillAnimation, value: reading.number)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .frame(width: 36)
             .frame(maxHeight: .infinity)
@@ -194,12 +217,20 @@ struct ArcGauge: View {
 
     var body: some View {
         ZStack {
-            arc(to: 1).stroke(Color.white.opacity(0.1), lineWidth: width)
-            arc(to: reading.number.map(reading.range.fraction) ?? 0)
+            let fraction = reading.number.map(reading.range.fraction) ?? 0
+            arc(0, 1).stroke(trackColor, lineWidth: width)
+            arc(0, fraction)
                 .stroke(AngularGradient(stops: reading.range.gradientStops, center: .center,
                                         startAngle: .degrees(arcStart), endAngle: .degrees(arcStart + arcSweep)),
                         lineWidth: width)
-                .animation(.easeOut(duration: 0.25), value: reading.number)
+                .animation(fillAnimation, value: reading.number)
+            if reading.number != nil {
+                // Soft glow in the gradient's own color on the last bit of the fill.
+                arc(max(fraction - 0.012, 0), fraction)
+                    .stroke(reading.tipColor, lineWidth: width)
+                    .shadow(color: reading.tipColor, radius: 5)
+                    .animation(fillAnimation, value: reading.number)
+            }
             GaugeValue(reading: reading, size: 34).padding(.horizontal, width * 2)
         }
         .aspectRatio(1, contentMode: .fit)
@@ -207,8 +238,8 @@ struct ArcGauge: View {
         .overlay(alignment: .bottom) { GaugeName(sensor: reading.sensor) }
     }
 
-    private func arc(to fraction: Double) -> some Shape {
-        Circle().inset(by: width / 2).trim(from: 0, to: arcSweep / 360 * fraction).rotation(.degrees(arcStart))
+    private func arc(_ from: Double, _ to: Double) -> some Shape {
+        Circle().inset(by: width / 2).trim(from: arcSweep / 360 * from, to: arcSweep / 360 * to).rotation(.degrees(arcStart))
     }
 }
 
@@ -223,13 +254,13 @@ private struct GaugeValue: View {
         Group {
             if reading.number == nil {
                 Text(reading.text)
-                    .font(.system(size: size * 0.55, weight: .semibold, design: .rounded))
+                    .font(.system(size: size * 0.55, weight: .semibold))
                     .foregroundStyle(.secondary)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(reading.text)
-                        .font(.system(size: size, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(reading.isRedline ? .red : .white)
+                        .font(.system(size: size, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(reading.isRedline ? GaugeColor.red.color : .white)
                     Text(reading.sensor.displayUnit(reading.units))
                         .font(.system(size: size * 0.32, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -241,14 +272,15 @@ private struct GaugeValue: View {
     }
 }
 
-/// Sensor name below the gauge, outside it.
+/// Sensor name below the gauge, outside it: small capitals, spaced out, light grey.
 private struct GaugeName: View {
     let sensor: Sensor
 
     var body: some View {
-        Text(sensor.name)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        Text(sensor.name.uppercased())
+            .font(.system(size: 11, weight: .medium))
+            .tracking(1.2)
+            .foregroundStyle(Color(white: 0.7))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
     }

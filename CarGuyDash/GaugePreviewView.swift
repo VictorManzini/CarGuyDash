@@ -41,6 +41,7 @@ struct GaugePreviewView: View {
         .onChange(of: sensor) { value = ranges.range(for: sensor).min }
         .navigationTitle("Gauge preview")
         .navigationBarTitleDisplayMode(.inline)
+        .background(.black)
         .preferredColorScheme(.dark)
     }
 }
