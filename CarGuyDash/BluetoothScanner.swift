@@ -1,6 +1,7 @@
 import CoreBluetooth
 import Foundation
 import Observation
+import UIKit
 
 /// Whoever carries an approved command to the adapter: the real Bluetooth one or the simulated one.
 /// Only `BluetoothScanner.send(_:)` calls `write`, after the gatekeeper approved the command.
@@ -38,7 +39,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// Every log line of this run, shown on screen and saved to `logFileURL`.
     private(set) var log: [String] = []
     private(set) var state = ConnectionState.bluetoothOff {
-        didSet { if state != oldValue { addLog("State: \(oldValue.rawValue) → \(state.rawValue)") } }
+        didSet {
+            guard state != oldValue else { return }
+            addLog("State: \(oldValue.rawValue) → \(state.rawValue)")
+            wakeStateWaiter()
+        }
     }
     /// True once the adapter can receive commands.
     var isReady: Bool { state == .ready }
@@ -61,11 +66,21 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private(set) var supportedPIDs: Set<Int>?
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
+    /// Counts the valid readings of the current measurement window (see `ReadingMeter`).
+    @ObservationIgnored var meter = ReadingMeter()
+    /// How often the measurement line is written. Tests shorten it.
+    @ObservationIgnored var meterInterval = Duration.seconds(10)
+    /// Whether the app is on screen; set by `setAppPhase`.
+    private(set) var appPhase: AppPhase
+    private let defaults: UserDefaults
+    /// Saved on the iPhone each time the app goes to the background: was polling on? Read after a restore.
+    private static let pollingWasOnKey = "pollingWasOnInBackground"
     /// One log file per app launch, in the app's Documents folder.
     let logFileURL: URL
     private let timeFormatter = DateFormatter()
     @ObservationIgnored private var logFile: FileHandle?
     @ObservationIgnored private var pendingResponse: CheckedContinuation<String?, Never>?
+    @ObservationIgnored private var stateWaiter: CheckedContinuation<Void, Never>?
 
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
@@ -83,7 +98,10 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     ]
 
     init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         profiles = CarProfiles(defaults: defaults)
+        // A background relaunch (state restoration) starts here too, so ask instead of assuming "active".
+        appPhase = UIApplication.shared.applicationState == .background ? .background : .active
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
@@ -94,7 +112,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         logFile = try? FileHandle(forWritingTo: logFileURL)
         super.init()
         // queue: nil delivers delegate callbacks on the main queue.
-        centralManager = CBCentralManager(delegate: self, queue: nil)
+        // The restore identifier lets iOS relaunch the app in the background and hand the connection back (see `restore`).
+        centralManager = CBCentralManager(
+            delegate: self, queue: nil,
+            options: [CBCentralManagerOptionRestoreIdentifierKey: "com.victormanzini.CarGuyDash.central"]
+        )
     }
 
     // MARK: - Central
@@ -116,6 +138,27 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         }
         guard state != .disconnected else { return }
         connectionLost(to: .bluetoothOff)
+    }
+
+    /// iOS closed the app in the background and relaunched it for this adapter. Runs before `centralManagerDidUpdateState`.
+    func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        restore(dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? [])
+    }
+
+    /// Takes the adapter iOS kept for us as the known one; the usual Bluetooth-on path then connects to it.
+    /// Polling starts again if it was on when the app went to the background (Stop or Disconnect turn it off).
+    func restore(_ peripherals: [CBPeripheral]) {
+        if let peripheral = peripherals.first {
+            addLog("State restored by iOS: \(peripheral.name ?? "adapter") (was already connected: \(peripheral.state == .connected))")
+            adapter = peripheral
+            peripheral.delegate = self
+        } else {
+            addLog("State restored by iOS: no adapter in it")
+        }
+        if defaults.bool(forKey: Self.pollingWasOnKey) {
+            addLog("Polling resumed after restore")
+            startPolling() // waits for Ready by itself
+        }
     }
 
     func centralManager(
@@ -243,7 +286,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         state = afterBluetoothOn ? .reconnecting : .connecting
         adapter = peripheral
         peripheral.delegate = self
-        centralManager.connect(peripheral)
+        if peripheral.state == .connected {
+            peripheral.discoverServices(nil) // restored still connected: no connect needed
+        } else {
+            centralManager.connect(peripheral)
+        }
     }
 
     /// The user's Disconnect: stops polling, drops the connection and does not reconnect.
@@ -380,6 +427,16 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         }
     }
 
+    /// The app went to the background or came back. The measurement window under way is closed first,
+    /// so each line belongs to one phase only.
+    func setAppPhase(_ phase: AppPhase) {
+        guard phase != appPhase else { return }
+        if isPolling { addLog(meter.close(in: appPhase)) }
+        if phase == .background { defaults.set(wantsPolling, forKey: Self.pollingWasOnKey) }
+        appPhase = phase
+        addLog(phase == .background ? "App went to the background" : "App back in the foreground")
+    }
+
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
     func addLog(_ line: String) {
         let line = timeFormatter.string(from: .now) + " " + line
@@ -389,6 +446,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     /// Sends one command and waits for the ">" prompt.
+    /// What normally moves on is the adapter's answer (the ELM327 answers every command, even "NO DATA", by itself).
+    /// The timer is only the safety net for a lost answer; in the background it can fire late, never too early.
     /// Returns the raw response and the time in ms; nil if blocked, not ready or timed out.
     func run(_ command: String, timeout: Duration = .seconds(10)) async -> (response: String, ms: Int)? {
         guard pendingResponse == nil else { addLog("Busy, not sent: \(command)"); return nil }
@@ -402,6 +461,17 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         timeoutTask.cancel()
         guard let response else { addLog("TIMEOUT or disconnected: \(command)"); return nil }
         return (response, Int((ContinuousClock.now - start) / .milliseconds(1)))
+    }
+
+    /// Suspends until the connection state changes (or `wakeStateWaiter` is called). No timer involved,
+    /// so it cannot run late in the background: the polling loop waits here while not ready.
+    func waitForStateChange() async {
+        await withCheckedContinuation { stateWaiter = $0 }
+    }
+
+    func wakeStateWaiter() {
+        stateWaiter?.resume()
+        stateWaiter = nil
     }
 
     private func finishCommand(with response: String?) {

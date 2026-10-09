@@ -52,7 +52,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
 - `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
-- `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data`, `feature/gauges` and `feature/reconnect` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
+- `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data`, `feature/gauges`, `feature/reconnect`, `feature/connect-button`, `feature/stand-by`, `feature/car-profile`, `feature/supported-sensors` and `feature/background-ble` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
 - Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; OBD reading tested in the car (see Next steps 4 and 6).
 - Gatekeeper (`Gatekeeper.swift`) built: allowlist of 10 AT commands (`ATH1` added for headers), service `01` + 2 hex digits, and `0902`; `ATPP`/`ATSH` explicitly blocked. `BluetoothScanner.send(_:)` is the only path to the adapter: it checks the gatekeeper, then hands the line to the active `AdapterLink` (real or simulated). Unit tests (`CarGuyDashTests`, Swift Testing) pass on the simulator.
@@ -83,6 +83,12 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
    - Test A at idle: oil 101 °C, coolant 96 °C, MAP 88 kPa, intake air 47 °C, throttle 15 %, engine load 13 %, speed 0, `ATRV` 13.7 V. `ATZ` takes ~930 ms; other AT commands ~30 ms; PIDs 90–120 ms.
    - Test B: `010C` alone 11.5 readings/s; the 4-PID cycle gives 3.3/s per PID (~13 requests/s in total).
    - Not tested in the car yet: reconnection (`feature/reconnect`). At the end of the log the adapter dropped ("connection has timed out"), then Bluetooth went off and on, and that path wrote nothing to the log; a log line was added for it.
+7. **Done:** in-car test (2026-10-09, approved by the owner):
+   - Car profile saved on the first connection; the VIN stayed out of the log.
+   - 43 supported PIDs found on connection.
+   - Disconnect: no reconnection. Connect: works, back to Ready.
+   - **iPhone locked: ~120 readings per 10 s** (measurement lines in `background`), against ~135 unlocked.
+   - With the ignition off the adapter stays connected (the OBD port has permanent 12 V) and the engine ECU stops answering RPM first.
 
 ## Branches
 
@@ -92,6 +98,8 @@ Stacked, each created from the previous one (approved exception to "branch from 
 
 All five are merged into `main` (each with `--no-ff`). The first four passed the in-car test. `feature/reconnect` was merged on the owner's request (merge `37dc070`), but reconnection is **still untested in the car** (drop and reconnection).
 
+Second stack, merged into `main` on 2026-10-09 after the in-car test, in this order, each with `--no-ff`: `feature/connect-button` → `feature/stand-by` → `feature/car-profile` → `feature/supported-sensors` → `feature/background-ble`.
+
 - **`feature/sensors`:** `Sensor` enum with the PIDs the engine ECU supports (name, unit, formula). Decodes only the engine's answer (header `7E8`, needs `ATH1`); tested with the real responses from the car log.
 - **`feature/fake-adapter`:** `AdapterLink` protocol with two versions: `BluetoothLink` (real, the only `writeValue(`) and `SimulatedAdapter` (answers like the car: `7E9` + `7E8` lines with the logged bytes, RPM 750–3000, ~100 ms, occasional `NO DATA`). The gatekeeper stays in front of both. Debug-only "Simulated adapter" button.
 - **`feature/live-data`:** `LiveData` keeps the latest value per sensor; older than 2 s = "N/A". Polling reads 7 sensors in a loop (RPM, oil, coolant, MAP, intake air, throttle, module voltage). Start/Stop buttons.
@@ -100,12 +108,12 @@ All five are merged into `main` (each with `--no-ff`). The first four passed the
 
 ## Pending in-car tests (owner)
 
-In-car tests are batched at the end of Phase 2 (owner's decision).
+In-car tests are batched at the end of Phase 2 (owner's decision). The Phase 2 test stays open in the roadmap until these pass.
 
-- [ ] **`feature/connect-button`** (not merged into `main` yet): with the engine running, tap Start, then Disconnect → state "Disconnected", every value "N/A", no more commands in the log, no reconnection. Tap Connect → "Ready" again (setup with `ATH1` in the log); Start reads again.
-- [ ] **Reconnection** (`feature/reconnect`, already in `main`): while polling, unplug and plug the adapter back (or turn the iPhone's Bluetooth off and on) → "Reconnecting", then "Ready", and the values come back by themselves.
-- [ ] **`feature/stand-by`** (not merged into `main` yet): "Stand By" shows up on the gauges during reconnection.
-- [ ] **`feature/car-profile`** (not merged into `main` yet): connect with the real car → the VIN is read (it must not appear in the log); the first time, the "Which car is this?" sheet appears, and after Save the Dashboard shows "Make Model"; connect again → no sheet. Swiping the sheet down leaves "Unknown car" and it asks again on the next connection.
+- [ ] **Connection drop** (`feature/reconnect` and `feature/stand-by`): with polling on, pull the adapter out of the port → "Reconnecting" and "Stand By" on the gauges; plug it back → "Ready" and the values return by themselves.
+- [ ] **Connect on an already known car** (`feature/car-profile`): Connect does not show the "Which car is this?" sheet.
+- [ ] **Sheet swiped down** (`feature/car-profile`): swiping the sheet down leaves "Unknown car" and it asks again on the next connection. (Not covered by the 2026-10-09 test.)
+- [ ] **State restoration by iOS** (`feature/background-ble`): iOS closes the app in the background and relaunches it → "State restored by iOS" in the log, same adapter again, and polling resumes ("Polling resumed after restore") if it was on.
 
 ## Open questions
 
