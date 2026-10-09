@@ -85,6 +85,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             addLog("Bluetooth: poweredOn")
             // Bluetooth came back: only the same adapter, found by the iPhone's identifier for it.
             if let known = adapter, let peripheral = central.retrievePeripherals(withIdentifiers: [known.identifier]).first {
+                addLog("Bluetooth back on, reconnecting to \(peripheral.name ?? "adapter")")
                 state = .reconnecting
                 adapter = peripheral
                 peripheral.delegate = self
