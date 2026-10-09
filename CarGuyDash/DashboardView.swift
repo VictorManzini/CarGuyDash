@@ -3,6 +3,7 @@ import SwiftUI
 /// Gauges, numbers only: RPM on top, the other polled sensors in a 2-column grid.
 struct DashboardView: View {
     let scanner: BluetoothScanner
+    let unitSettings: UnitSettings
 
     var body: some View {
         // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
@@ -34,8 +35,10 @@ struct DashboardView: View {
                     Button("Disconnect") { scanner.disconnect() }
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink("Tests") { ContentView(scanner: scanner) }
+                NavigationLink { SettingsView(unitSettings: unitSettings) } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Settings")
             }
         }
     }
@@ -44,7 +47,7 @@ struct DashboardView: View {
     private func block(_ sensor: Sensor, valueSize: CGFloat) -> some View {
         let value = scanner.liveData.value(for: sensor)
         let hasNumber = scanner.state == .ready && !scanner.carSilent && value != nil
-        let text = gaugeText(for: sensor, state: scanner.state, value: value, silent: scanner.carSilent)
+        let text = gaugeText(for: sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
         // "Stand By" is a long word, so it gets a smaller size than a number.
         let size = text == "Stand By" ? valueSize * 0.55 : valueSize
         return VStack(spacing: 2) {
@@ -53,7 +56,7 @@ struct DashboardView: View {
                     .font(.system(size: size, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(hasNumber ? .primary : .secondary)
                 if hasNumber {
-                    Text(sensor.unit).font(.headline).foregroundStyle(.secondary)
+                    Text(sensor.displayUnit(unitSettings.units)).font(.headline).foregroundStyle(.secondary)
                 }
             }
             .lineLimit(1)
@@ -67,5 +70,5 @@ struct DashboardView: View {
 }
 
 #Preview {
-    NavigationStack { DashboardView(scanner: BluetoothScanner()) }
+    NavigationStack { DashboardView(scanner: BluetoothScanner(), unitSettings: UnitSettings()) }
 }
