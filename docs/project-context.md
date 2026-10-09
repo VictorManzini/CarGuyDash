@@ -111,8 +111,8 @@ Second stack, merged into `main` on 2026-10-09 after the in-car test, in this or
 In-car tests are batched at the end of Phase 2 (owner's decision). The Phase 2 test stays open in the roadmap until these pass.
 
 - [ ] **Connection drop** (`feature/reconnect` and `feature/stand-by`): with polling on, pull the adapter out of the port → "Reconnecting" and "Stand By" on the gauges; plug it back → "Ready" and the values return by themselves.
-- [ ] **Connect on an already known car** (`feature/car-profile`): Connect does not show the "Which car is this?" sheet.
-- [ ] **Sheet swiped down** (`feature/car-profile`): swiping the sheet down leaves "Unknown car" and it asks again on the next connection. (Not covered by the 2026-10-09 test.)
+- [ ] **Connect on an already known car** (`feature/car-profile`): Connect does not show the "Which car is this?" sheet. Can be tested at home with the simulated adapter (save the car, Disconnect, Connect).
+- [ ] **Sheet swiped down** (`feature/car-profile`): swiping the sheet down leaves "Unknown car" and it asks again on the next connection. Not covered by the 2026-10-09 test; can be tested at home with the simulated adapter.
 - [ ] **State restoration by iOS** (`feature/background-ble`): iOS closes the app in the background and relaunches it → "State restored by iOS" in the log, same adapter again, and polling resumes ("Polling resumed after restore") if it was on.
 
 ## Open questions
