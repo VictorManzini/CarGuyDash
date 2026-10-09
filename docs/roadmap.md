@@ -20,6 +20,7 @@
 - [ ] Visual prototype of the screens (only when the owner asks)
 - [ ] Home page + gauges page (1 to 8 user-chosen gauges, portrait and landscape)
 - [ ] Gauge editing page (separate, to avoid taps while driving)
+- [x] Boost gauge on the Dashboard (manifold − atmospheric)
 - [ ] All-sensors page (Car Scanner style)
 - [x] Settings: units (°C/°F, bar/psi/kPa, km/h/mph) — simple screen from the Dashboard gear button
 - [ ] Settings: connect on launch, redline alerts
