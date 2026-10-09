@@ -54,4 +54,10 @@ struct LogTests {
         let text = (scanner.log + other.log).joined(separator: "\n")
         #expect(!text.contains("Zzmake") && !text.contains("Zzmodel") && !text.contains(SimulatedAdapter.fakeVIN))
     }
+
+    @Test func aRestoreWithoutAnAdapterIsLogged() async {
+        let scanner = await scanner()
+        scanner.restore([]) // a real CBPeripheral cannot be built in a test
+        #expect(scanner.log.last?.hasSuffix("State restored by iOS: no adapter in it") == true)
+    }
 }

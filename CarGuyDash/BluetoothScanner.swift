@@ -94,7 +94,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         logFile = try? FileHandle(forWritingTo: logFileURL)
         super.init()
         // queue: nil delivers delegate callbacks on the main queue.
-        centralManager = CBCentralManager(delegate: self, queue: nil)
+        // The restore identifier lets iOS relaunch the app in the background and hand the connection back (see `restore`).
+        centralManager = CBCentralManager(
+            delegate: self, queue: nil,
+            options: [CBCentralManagerOptionRestoreIdentifierKey: "com.victormanzini.CarGuyDash.central"]
+        )
     }
 
     // MARK: - Central
@@ -116,6 +120,22 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         }
         guard state != .disconnected else { return }
         connectionLost(to: .bluetoothOff)
+    }
+
+    /// iOS closed the app in the background and relaunched it for this adapter. Runs before `centralManagerDidUpdateState`.
+    func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        restore(dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? [])
+    }
+
+    /// Takes the adapter iOS kept for us as the known one; the usual Bluetooth-on path then connects to it.
+    func restore(_ peripherals: [CBPeripheral]) {
+        guard let peripheral = peripherals.first else {
+            addLog("State restored by iOS: no adapter in it")
+            return
+        }
+        addLog("State restored by iOS: \(peripheral.name ?? "adapter") (was already connected: \(peripheral.state == .connected))")
+        adapter = peripheral
+        peripheral.delegate = self
     }
 
     func centralManager(
@@ -243,7 +263,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         state = afterBluetoothOn ? .reconnecting : .connecting
         adapter = peripheral
         peripheral.delegate = self
-        centralManager.connect(peripheral)
+        if peripheral.state == .connected {
+            peripheral.discoverServices(nil) // restored still connected: no connect needed
+        } else {
+            centralManager.connect(peripheral)
+        }
     }
 
     /// The user's Disconnect: stops polling, drops the connection and does not reconnect.
