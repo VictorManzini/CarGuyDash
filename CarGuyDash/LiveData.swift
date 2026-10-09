@@ -54,12 +54,13 @@ extension BluetoothScanner {
         addLog("Start")
         pollingTask = Task {
             addLog("=== Polling started ===")
-            // Runs until Stop. While the connection is down it waits, then reads again once ready.
+            // Runs until Stop. While the connection is down it waits for the state to change, then reads again once ready.
             while !Task.isCancelled {
                 let sensors = sensorsToPoll
                 // Also waits when the car supports none of them: without it this loop would never yield.
+                // Woken by a state change or by Stop, not by a timer.
                 guard isReady, !sensors.isEmpty else {
-                    try? await Task.sleep(for: .milliseconds(200))
+                    await waitForStateChange()
                     continue
                 }
                 for sensor in sensors where !Task.isCancelled && isReady {
@@ -73,10 +74,11 @@ extension BluetoothScanner {
         }
     }
 
-    /// Ends the loop after the command in progress (at most 1 s).
+    /// Ends the loop after the command in progress (at most 1 s), or at once if it is waiting.
     func stopPolling() {
         guard let pollingTask, !pollingTask.isCancelled else { return }
         addLog("Stop")
         pollingTask.cancel()
+        wakeStateWaiter()
     }
 }

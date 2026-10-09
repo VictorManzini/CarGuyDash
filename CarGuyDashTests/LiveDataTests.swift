@@ -67,4 +67,48 @@ struct LiveDataTests {
         }
         #expect(!scanner.isPolling)
     }
+
+    /// Gives the main actor a few turns, far less than the old 200 ms timer, and no real time to wait.
+    private func letTheLoopRun() async {
+        for _ in 0..<50 { await Task.yield() }
+    }
+
+    @Test func waitingForAStateChangeNeedsNoTimer() async {
+        let scanner = BluetoothScanner()
+        var woke = false
+        let waiter = Task { await scanner.waitForStateChange(); woke = true }
+        await letTheLoopRun()
+        #expect(!woke) // nothing changed, so it keeps waiting
+        scanner.wakeStateWaiter()
+        await waiter.value // returns by itself: no clock involved
+        #expect(woke)
+    }
+
+    @Test func stopEndsTheLoopWhileItWaitsForReady() async {
+        let scanner = BluetoothScanner()
+        await scanner.useSimulatedAdapter()
+        scanner.disconnect()
+        scanner.startPolling()
+        await letTheLoopRun() // now waiting, since the state is Disconnected
+        scanner.stopPolling()
+        await letTheLoopRun()
+        #expect(!scanner.isPolling)
+    }
+
+    @Test func theLoopReadsAgainAsSoonAsTheStateIsReady() async throws {
+        let scanner = BluetoothScanner()
+        let simulated = await scanner.useSimulatedAdapter()
+        scanner.disconnect()
+        scanner.startPolling()
+        await letTheLoopRun()
+        let asked = simulated.received.count
+        scanner.connect()
+        let start = ContinuousClock.now
+        while scanner.liveData.value(for: .rpm) == nil && ContinuousClock.now - start < .seconds(5) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        scanner.stopPolling()
+        #expect(scanner.liveData.value(for: .rpm) != nil)
+        #expect(simulated.received.count > asked)
+    }
 }

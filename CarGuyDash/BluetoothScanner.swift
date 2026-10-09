@@ -38,7 +38,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// Every log line of this run, shown on screen and saved to `logFileURL`.
     private(set) var log: [String] = []
     private(set) var state = ConnectionState.bluetoothOff {
-        didSet { if state != oldValue { addLog("State: \(oldValue.rawValue) → \(state.rawValue)") } }
+        didSet {
+            guard state != oldValue else { return }
+            addLog("State: \(oldValue.rawValue) → \(state.rawValue)")
+            wakeStateWaiter()
+        }
     }
     /// True once the adapter can receive commands.
     var isReady: Bool { state == .ready }
@@ -66,6 +70,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private let timeFormatter = DateFormatter()
     @ObservationIgnored private var logFile: FileHandle?
     @ObservationIgnored private var pendingResponse: CheckedContinuation<String?, Never>?
+    @ObservationIgnored private var stateWaiter: CheckedContinuation<Void, Never>?
 
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
@@ -413,6 +418,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     /// Sends one command and waits for the ">" prompt.
+    /// What normally moves on is the adapter's answer (the ELM327 answers every command, even "NO DATA", by itself).
+    /// The timer is only the safety net for a lost answer; in the background it can fire late, never too early.
     /// Returns the raw response and the time in ms; nil if blocked, not ready or timed out.
     func run(_ command: String, timeout: Duration = .seconds(10)) async -> (response: String, ms: Int)? {
         guard pendingResponse == nil else { addLog("Busy, not sent: \(command)"); return nil }
@@ -426,6 +433,17 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         timeoutTask.cancel()
         guard let response else { addLog("TIMEOUT or disconnected: \(command)"); return nil }
         return (response, Int((ContinuousClock.now - start) / .milliseconds(1)))
+    }
+
+    /// Suspends until the connection state changes (or `wakeStateWaiter` is called). No timer involved,
+    /// so it cannot run late in the background: the polling loop waits here while not ready.
+    func waitForStateChange() async {
+        await withCheckedContinuation { stateWaiter = $0 }
+    }
+
+    func wakeStateWaiter() {
+        stateWaiter?.resume()
+        stateWaiter = nil
     }
 
     private func finishCommand(with response: String?) {
