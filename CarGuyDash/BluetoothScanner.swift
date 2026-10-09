@@ -27,6 +27,8 @@ enum ConnectionState: String {
     case connecting = "Connecting"
     case ready = "Ready"
     case reconnecting = "Reconnecting"
+    /// The user tapped Disconnect: nothing reconnects until Connect.
+    case disconnected = "Disconnected"
 }
 
 /// Scans for the OBD-II adapter, connects to it, lists its services and characteristics,
@@ -83,18 +85,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         switch central.state {
         case .poweredOn:
             addLog("Bluetooth: poweredOn")
-            // Bluetooth came back: only the same adapter, found by the iPhone's identifier for it.
-            if let known = adapter, let peripheral = central.retrievePeripherals(withIdentifiers: [known.identifier]).first {
-                addLog("Bluetooth back on, reconnecting to \(peripheral.name ?? "adapter")")
-                state = .reconnecting
-                adapter = peripheral
-                peripheral.delegate = self
-                central.connect(peripheral)
-                return
-            }
-            state = .searching
-            // nil = any service; each device is reported once (no duplicates by default).
-            central.scanForPeripherals(withServices: nil)
+            // After Disconnect, Bluetooth coming back does not connect anything.
+            if state != .disconnected { findAdapter(afterBluetoothOn: true) }
             return
         case .poweredOff: addLog("Bluetooth: poweredOff")
         case .unauthorized: addLog("Bluetooth: unauthorized")
@@ -103,6 +95,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         case .unknown: addLog("Bluetooth: unknown")
         @unknown default: addLog("Bluetooth: new state \(central.state.rawValue)")
         }
+        guard state != .disconnected else { return }
         connectionLost()
         state = .bluetoothOff
     }
@@ -137,6 +130,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         addLog("Disconnected: \(error?.localizedDescription ?? "no error")")
+        guard state != .disconnected else { return } // the user's Disconnect: already cleaned up
         connectionLost()
         reconnect(peripheral)
     }
@@ -211,10 +205,55 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         state = .reconnecting
     }
 
+    /// Connects to the known adapter (found by the iPhone's identifier for it),
+    /// or searches for any IOS-Vlink if there is none yet.
+    private func findAdapter(afterBluetoothOn: Bool) {
+        guard let known = adapter,
+              let peripheral = centralManager.retrievePeripherals(withIdentifiers: [known.identifier]).first
+        else {
+            state = .searching
+            // nil = any service; each device is reported once (no duplicates by default).
+            centralManager.scanForPeripherals(withServices: nil)
+            return
+        }
+        let name = peripheral.name ?? "adapter"
+        addLog(afterBluetoothOn ? "Bluetooth back on, reconnecting to \(name)" : "Connecting to \(name)")
+        state = afterBluetoothOn ? .reconnecting : .connecting
+        adapter = peripheral
+        peripheral.delegate = self
+        centralManager.connect(peripheral)
+    }
+
+    /// The user's Disconnect: stops polling, drops the connection and does not reconnect.
+    func disconnect() {
+        guard state != .disconnected else { return }
+        addLog("Disconnect")
+        stopPolling()
+        connectionLost()
+        state = .disconnected
+        centralManager.stopScan()
+        if let adapter { centralManager.cancelPeripheralConnection(adapter) } // also cancels a pending connect
+    }
+
+    /// The user's Connect, after a Disconnect: the same adapter again (real or simulated).
+    func connect() {
+        guard state == .disconnected else { return }
+        addLog("Connect")
+        if let simulator {
+            link = simulator
+            state = .connecting
+            Task { await prepare() }
+        } else if centralManager.state == .poweredOn {
+            findAdapter(afterBluetoothOn: false)
+        } else {
+            state = .bluetoothOff // connects by itself once Bluetooth is on
+        }
+    }
+
     /// Asks CoreBluetooth to connect to the same adapter again. A pending connect never times out,
     /// so this keeps trying for as long as it takes.
     private func reconnect(_ peripheral: CBPeripheral) {
-        guard peripheral == adapter, centralManager.state == .poweredOn else { return }
+        guard peripheral == adapter, state != .disconnected, centralManager.state == .poweredOn else { return }
         addLog("Reconnecting to \(peripheral.name ?? "adapter")")
         centralManager.connect(peripheral)
     }
@@ -253,6 +292,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         connectionLost()
         Task {
             try? await Task.sleep(for: downtime)
+            guard state == .reconnecting else { return } // Disconnect was tapped meanwhile
             addLog("Reconnected (simulated)")
             link = simulator
             await prepare()
