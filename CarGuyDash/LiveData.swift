@@ -58,6 +58,7 @@ extension BluetoothScanner {
         pollingTask = Task {
             addLog("=== Polling started ===")
             meter = ReadingMeter()
+            resetSilence()
             // Only measures: polling never waits for it. In the background it may fire late; the line says by how much.
             let meterTask = Task {
                 while !Task.isCancelled {
@@ -79,10 +80,12 @@ extension BluetoothScanner {
                     let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
                     let value = result.flatMap { sensor.value(from: $0.response) }
                     if value != nil { meter.record() }
+                    noteReading(valid: value != nil)
                     liveData.record(value, for: sensor)
                 }
             }
             meterTask.cancel()
+            resetSilence()
             addLog("=== Polling stopped ===")
             pollingTask = nil
         }
