@@ -44,7 +44,7 @@ struct LiveDataTests {
         let liveData = scanner.liveData
         #expect(liveData.value(for: .oilTemp) == 67)
         #expect(liveData.value(for: .coolantTemp) == 69)
-        #expect(liveData.value(for: .manifoldPressure) == 93)
+        #expect((88...190).contains(try #require(liveData.value(for: .manifoldPressure)))) // follows the RPM
         #expect(liveData.value(for: .intakeAirTemp) == 45)
         #expect(liveData.value(for: .throttlePosition) == 78 * 100 / 255.0)
         #expect(liveData.value(for: .moduleVoltage) == 14.1)

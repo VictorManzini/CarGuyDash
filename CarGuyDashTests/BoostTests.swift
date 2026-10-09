@@ -94,6 +94,7 @@ struct BoostTests {
         // Asked before the first Dashboard sensor (RPM).
         let order = simulated.received
         #expect(try #require(order.firstIndex(of: "0133\r")) < (try #require(order.firstIndex(of: "010C\r"))))
-        #expect(scanner.liveData.boost == 0) // simulated car: 93 - 93
+        // Simulated car: manifold 88...190 kPa minus atmospheric 93 kPa.
+        #expect((-5...97).contains(try #require(scanner.liveData.boost)))
     }
 }

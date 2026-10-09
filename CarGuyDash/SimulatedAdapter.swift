@@ -23,12 +23,13 @@ final class SimulatedAdapter: AdapterLink {
         "60": [0x01, 0x00, 0x00, 0x00],
     ]
     private let deliver: (String) -> Void
+    /// The last RPM drawn; the manifold pressure follows it.
+    private var lastRPM = 750
 
     /// Engine ECU data bytes from the in-car log (2026-10-08). RPM is made up on every request.
     static let engineBytes: [String: [UInt8]] = [
         "5C": [0x6B], // oil 67 °C
         "05": [0x6D], // coolant 69 °C
-        "0B": [0x5D], // manifold 93 kPa
         "33": [0x5D], // atmospheric 93 kPa
         "0F": [0x55], // intake air 45 °C
         "11": [0x4E], // throttle 30.6 %
@@ -88,9 +89,17 @@ final class SimulatedAdapter: AdapterLink {
         return ["7E8" + "1014" + "490201" + first, "7E8" + "21" + second, "7E8" + "22" + third].joined(separator: "\r")
     }
 
+    /// Manifold pressure that follows the RPM in a straight line: 750 rpm = 88 kPa (light vacuum, like the real car
+    /// idling), 3000 rpm = 190 kPa (about 1 bar of boost over the 93 kPa atmosphere).
+    static func manifoldKPa(rpm: Int) -> Int {
+        Int((88 + Double(rpm - 750) * (190 - 88) / (3000 - 750)).rounded())
+    }
+
     private func bytes(for pid: String) -> [UInt8]? {
+        if pid == Sensor.manifoldPressure.rawValue { return [UInt8(Self.manifoldKPa(rpm: lastRPM))] }
         guard pid == Sensor.rpm.rawValue else { return Self.engineBytes[pid] }
-        let raw = Int.random(in: 750...3000) * 4 // RPM = (A * 256 + B) / 4
+        lastRPM = Int.random(in: 750...3000)
+        let raw = lastRPM * 4 // RPM = (A * 256 + B) / 4
         return [UInt8(raw / 256), UInt8(raw % 256)]
     }
 }
