@@ -10,6 +10,16 @@ final class SimulatedAdapter: AdapterLink {
     var noDataChance = 0.05
     /// False: 0902 answers "NO DATA", like a car that does not give its VIN.
     var answersVIN = true
+    /// False: the support blocks (0100, 0120...) answer "NO DATA", like a car that fails to list its PIDs.
+    var answersSupportedPIDs = true
+    /// "Supported PIDs" masks of the engine ECU (7E8), from the in-car log (no personal data).
+    /// A test can change one to make the car lack a sensor.
+    var supportMasks: [String: [UInt8]] = [
+        "00": [0xBE, 0x3F, 0xA8, 0x13],
+        "20": [0xA0, 0x07, 0xB0, 0x11],
+        "40": [0xFE, 0xD0, 0x84, 0x11],
+        "60": [0x01, 0x00, 0x00, 0x00],
+    ]
     private let deliver: (String) -> Void
 
     /// Engine ECU data bytes from the in-car log (2026-10-08). RPM is made up on every request.
@@ -48,11 +58,20 @@ final class SimulatedAdapter: AdapterLink {
         default: break
         }
         let pid = String(command.dropFirst(2))
+        // The support blocks always answer (never "NO DATA" by chance). The second ECU answers 0100–0140 too, with zeros.
+        if command.hasPrefix("01"), let mask = supportMasks[pid] {
+            return answersSupportedPIDs ? reply(pid: pid, data: mask, secondECU: pid != "60") : "NO DATA"
+        }
         guard command.hasPrefix("01"), let bytes = bytes(for: pid), Double.random(in: 0..<1) >= noDataChance else {
             return "NO DATA"
         }
-        // The second ECU answers first with zeros, so a reader that does not filter by 7E8 gets it wrong.
-        return [("7E9", bytes.map { _ in UInt8(0) }), ("7E8", bytes)]
+        return reply(pid: pid, data: bytes, secondECU: true)
+    }
+
+    /// The lines of a positive answer. The second ECU answers first with zeros,
+    /// so a reader that does not filter by 7E8 gets it wrong.
+    private func reply(pid: String, data: [UInt8], secondECU: Bool) -> String {
+        (secondECU ? [("7E9", data.map { _ in UInt8(0) }), ("7E8", data)] : [("7E8", data)])
             .map { header, data in
                 header + String(format: "%02X41", data.count + 2) + pid + data.map { String(format: "%02X", $0) }.joined()
             }
