@@ -20,4 +20,11 @@ struct GaugeTextTests {
         #expect(gaugeText(for: .moduleVoltage, state: .ready, value: 13.7) == "13.7")
         #expect(gaugeText(for: .oilTemp, state: .ready, value: nil) == "N/A") // this sensor stopped answering
     }
+
+    @Test func aSilentCarIsStandByEvenWhenReady() {
+        #expect(gaugeText(for: .rpm, state: .ready, value: nil, silent: true) == "Stand By")
+        #expect(gaugeText(for: .oilTemp, state: .ready, value: 67, silent: true) == "Stand By")
+        // Disconnected is still N/A: silence only matters while the connection is up.
+        #expect(gaugeText(for: .rpm, state: .disconnected, value: nil, silent: true) == "N/A")
+    }
 }
