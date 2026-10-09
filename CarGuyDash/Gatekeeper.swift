@@ -8,7 +8,7 @@ nonisolated enum Gatekeeper {
 
     /// Adapter setup commands we use. All of them only configure how the adapter reads.
     static let allowedATCommands: Set<String> = [
-        "ATZ", "ATI", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP0", "ATDP", "ATRV",
+        "ATZ", "ATI", "ATE0", "ATL0", "ATS0", "ATH0", "ATH1", "ATSP0", "ATDP", "ATRV",
     ]
 
     /// Always blocked, even if the allowlist grows by mistake.
