@@ -23,7 +23,16 @@ struct DashboardView: View {
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            NavigationLink("Tests") { ContentView(scanner: scanner) }
+            ToolbarItem(placement: .topBarLeading) {
+                if scanner.state == .disconnected {
+                    Button("Connect") { scanner.connect() }
+                } else {
+                    Button("Disconnect") { scanner.disconnect() }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink("Tests") { ContentView(scanner: scanner) }
+            }
         }
     }
 
