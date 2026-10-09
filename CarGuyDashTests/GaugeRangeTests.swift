@@ -9,9 +9,11 @@ struct GaugeRangeTests {
         #expect(range.color(at: 60) == .blue)  // below normalLow (90)
         #expect(range.color(at: 90) == .green)
         #expect(range.color(at: 95) == .green)
-        #expect(range.color(at: 104.9) == .green)
-        #expect(range.color(at: 105) == .red)  // normalHigh = redline: red wins
-        #expect(range.color(at: 115) == .red)
+        #expect(range.color(at: 105) == .yellow) // normalHigh
+        #expect(range.color(at: 110) == .orange) // halfway to the redline
+        #expect(range.color(at: 114.9) == .orange)
+        #expect(range.color(at: 115) == .red)    // redline
+        #expect(range.color(at: 130) == .red)
     }
 
     @Test func rpmColorsStartGreen() {
@@ -20,9 +22,23 @@ struct GaugeRangeTests {
         #expect(range.color(at: 0) == .green)
         #expect(range.color(at: 3000) == .green)
         #expect(range.color(at: 6000) == .yellow)
-        #expect(range.color(at: 6499) == .yellow)
+        #expect(range.color(at: 6250) == .orange)
+        #expect(range.color(at: 6499) == .orange)
         #expect(range.color(at: 6500) == .red)
         #expect(range.color(at: 7000) == .red)
+    }
+
+    @Test func theGradientMixesSmoothlyBetweenStops() {
+        let range = GaugeRange.standard(for: .coolantTemp)
+        let yellow = GaugeColor.yellow.rgb, orange = GaugeColor.orange.rgb
+        #expect(range.rgb(at: 105) == yellow)
+        #expect(range.rgb(at: 110) == orange)
+        let halfway = range.rgb(at: 107.5) // halfway between yellow and orange
+        let middleGreen: Double = (yellow.g + orange.g) / 2
+        #expect(halfway.r == 255)
+        #expect(abs(halfway.g - middleGreen) < 0.001)
+        #expect(halfway.b == 0)
+        #expect(range.rgb(at: 130) == GaugeColor.red.rgb)
     }
 
     @Test func otherSensorsUseTheFormulaRange() {
@@ -39,8 +55,9 @@ struct GaugeRangeTests {
             GaugeReading(sensor: sensor, text: text ?? sensor.text(for: value), value: value,
                          range: .standard(for: sensor), units: Units())
         }
-        #expect(!reading(.coolantTemp, 104.9).isRedline)
-        #expect(reading(.coolantTemp, 105).isRedline)
+        #expect(!reading(.coolantTemp, 110).isRedline)
+        #expect(!reading(.coolantTemp, 114.9).isRedline)
+        #expect(reading(.coolantTemp, 115).isRedline)
         #expect(!reading(.rpm, 6499).isRedline)
         #expect(reading(.rpm, 6500).isRedline)
         // Stand By / N/A with an old value left over: no number, never red.
@@ -50,7 +67,7 @@ struct GaugeRangeTests {
 
     @Test func rangesConvertOnlyOnScreen() {
         let coolant = GaugeRange.standard(for: .coolantTemp).converted(for: .coolantTemp, Units(temperature: .fahrenheit))
-        #expect(coolant == GaugeRange(min: 104, max: 266, normalLow: 194, normalHigh: 221, redline: 221))
+        #expect(coolant == GaugeRange(min: 104, max: 266, normalLow: 194, normalHigh: 221, redline: 239))
         let map = GaugeRange.standard(for: .manifoldPressure).converted(for: .manifoldPressure, Units(pressure: .bar))
         #expect(map.min == 0 && map.max == 2.55)
         let speed = GaugeRange.standard(for: .speed).converted(for: .speed, Units(speed: .mph))

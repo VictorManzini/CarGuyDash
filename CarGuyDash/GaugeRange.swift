@@ -3,11 +3,22 @@ import Observation
 
 /// Color zones along a gauge's scale.
 nonisolated enum GaugeColor: Equatable {
-    case blue, green, yellow, red
+    case blue, green, yellow, orange, red
+
+    /// Vivid, fully opaque colors (0...255).
+    var rgb: (r: Double, g: Double, b: Double) {
+        switch self {
+        case .blue: (0x29, 0x79, 0xFF)
+        case .green: (0x00, 0xE6, 0x76)
+        case .yellow: (0xFF, 0xEA, 0x00)
+        case .orange: (0xFF, 0x91, 0x00)
+        case .red: (0xFF, 0x17, 0x44)
+        }
+    }
 }
 
 /// A sensor's scale on the gauges, always in the sensor's internal unit (°C, kPa, km/h).
-/// Blue below `normalLow`, green to yellow across the normal band, red from `redline`.
+/// Blue below `normalLow`, green to yellow across the normal band, orange halfway to the redline, red from `redline`.
 nonisolated struct GaugeRange: Codable, Equatable {
     var min: Double
     var max: Double
@@ -20,7 +31,7 @@ nonisolated struct GaugeRange: Codable, Equatable {
     static func standard(for sensor: Sensor) -> GaugeRange {
         switch sensor {
         case .rpm: return GaugeRange(min: 0, max: 7000, normalLow: 0, normalHigh: 6000, redline: 6500)
-        case .coolantTemp: return GaugeRange(min: 40, max: 130, normalLow: 90, normalHigh: 105, redline: 105)
+        case .coolantTemp: return GaugeRange(min: 40, max: 130, normalLow: 90, normalHigh: 105, redline: 115)
         default:
             // Every formula grows with its bytes: all 0x00 = lowest value, all 0xFF = highest.
             let low = sensor.decode([0, 0]) ?? 0
@@ -35,18 +46,29 @@ nonisolated struct GaugeRange: Codable, Equatable {
         return Swift.min(Swift.max((value - min) / (max - min), 0), 1)
     }
 
-    /// Fixed color stops along the scale (0...1), shared by the bar and arc gradients.
+    /// Fixed color stops along the scale (0...1), shared by the bar and arc gradients; red from the redline to max.
     /// No blue when the normal band starts at the minimum (RPM starts green).
     var stops: [(color: GaugeColor, at: Double)] {
         let blue: [(color: GaugeColor, at: Double)] = normalLow > min ? [(.blue, 0)] : []
-        return blue + [(.green, fraction(normalLow)), (.yellow, fraction(normalHigh)), (.red, fraction(redline))]
+        return blue + [(.green, fraction(normalLow)), (.yellow, fraction(normalHigh)),
+                       (.orange, fraction((normalHigh + redline) / 2)), (.red, fraction(redline))]
     }
 
     /// The color of the last stop at or before `value`: blue below normalLow, green in the normal band,
-    /// yellow from normalHigh, red from the redline.
+    /// yellow from normalHigh, orange from halfway to the redline, red from the redline.
     func color(at value: Double) -> GaugeColor {
         let at = fraction(value)
         return stops.last { $0.at <= at }?.color ?? stops[0].color
+    }
+
+    /// The gradient's color at `value`, mixed smoothly between the two stops around it (0...255).
+    func rgb(at value: Double) -> (r: Double, g: Double, b: Double) {
+        let at = fraction(value)
+        guard let next = stops.firstIndex(where: { $0.at > at }), next > 0 else { return color(at: value).rgb }
+        let (a, b) = (stops[next - 1], stops[next])
+        let t = (at - a.at) / (b.at - a.at)
+        func mix(_ x: Double, _ y: Double) -> Double { x + (y - x) * t }
+        return (mix(a.color.rgb.r, b.color.rgb.r), mix(a.color.rgb.g, b.color.rgb.g), mix(a.color.rgb.b, b.color.rgb.b))
     }
 
     /// The same range in the chosen units, for the labels on screen.
