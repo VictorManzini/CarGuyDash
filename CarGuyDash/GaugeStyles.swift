@@ -46,6 +46,22 @@ enum GaugeLook {
     /// Same family everywhere: SF Pro, semibold numbers with fixed-width digits, medium units.
     static func number(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold).monospacedDigit() }
     static func unit(_ size: CGFloat) -> Font { .system(size: size * 0.36, weight: .medium) }
+
+    /// The value text size every Digital, Bar and Arc gauge of one grid shares, from the cell's size:
+    /// a fifth of the cell's smaller side once the name line (about 24 pt with its gap) is taken off.
+    static func valueSize(cell: CGSize) -> CGFloat { max(0, min(cell.width, cell.height - 24)) * 0.2 }
+}
+
+private struct GaugeValueSizeKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    /// Set by `GaugeGrid` so every value text in it has one size; nil elsewhere (each style picks its own).
+    var gaugeValueSize: CGFloat? {
+        get { self[GaugeValueSizeKey.self] }
+        set { self[GaugeValueSizeKey.self] = newValue }
+    }
 }
 
 extension Color {
@@ -87,12 +103,19 @@ private struct GaugeCell<Content: View>: View {
 }
 
 /// Number and unit as one text, so they share one baseline and shrink together.
-/// Red from the redline. "Stand By" / "N/A" replace both, in grey.
+/// Red from the redline. "Stand By" / "N/A" replace both, in grey. Inside a `GaugeGrid` the grid's size wins over `preferredSize`.
 private struct GaugeValue: View {
     let reading: GaugeReading
-    let size: CGFloat
+    let preferredSize: CGFloat
+    @Environment(\.gaugeValueSize) private var gridSize
+
+    init(reading: GaugeReading, size: CGFloat) {
+        self.reading = reading
+        preferredSize = size
+    }
 
     var body: some View {
+        let size = gridSize ?? preferredSize
         Group {
             if reading.number == nil {
                 Text(reading.text).font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(GaugeLook.secondary)
@@ -322,6 +345,9 @@ struct BarGauge: View {
         GaugeCell(reading: reading) {
             GeometryReader { cell in
             VStack(spacing: GaugeLook.gap) {
+                // Wider in a wider cell, never thinner than the arc's track. Also capped by the cell's height,
+                // so a short, wide landscape cell does not turn the bar into a fat pill.
+                let width = max(GaugeLook.track, min(cell.size.width * 0.13, cell.size.height * 0.12))
                 GeometryReader { geo in
                     let height = geo.size.height * (reading.number.map(reading.range.fraction) ?? 0)
                     ZStack(alignment: .bottom) {
@@ -332,13 +358,13 @@ struct BarGauge: View {
                         }
                         .clipShape(Capsule())
                         if reading.number != nil {
-                            TipGlow(color: reading.tipColor).offset(y: -(height - GaugeLook.track * 0.6))
+                            TipGlow(color: reading.tipColor, size: width).offset(y: -(height - width * 0.6))
                         }
                     }
                     .animation(GaugeLook.motion, value: reading.number)
                 }
-                .frame(width: GaugeLook.track)
-                // Same size as the arc's value in a cell of the same width.
+                .frame(width: width)
+                // Same size as the arc's value in a cell of the same width (outside a grid).
                 GaugeValue(reading: reading, size: cell.size.width * 0.2)
             }
             .frame(width: cell.size.width, height: cell.size.height)
@@ -398,12 +424,14 @@ struct ArcGauge: View {
 /// Round and soft, so the end of the fill stays clean (no lighter square).
 private struct TipGlow: View {
     let color: Color
+    /// The fill's thickness.
+    var size: CGFloat = GaugeLook.track
 
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: GaugeLook.track * 1.2, height: GaugeLook.track * 1.2)
-            .blur(radius: GaugeLook.track * 0.45)
+            .frame(width: size * 1.2, height: size * 1.2)
+            .blur(radius: size * 0.45)
             .opacity(0.6)
             .allowsHitTesting(false)
     }
@@ -428,6 +456,7 @@ struct StyledGauge: View {
 
 /// The gauges page grid (`GaugeLayout.grid`), shared by Live gauges and the gauge editor so both place the gauges the same way.
 /// `cell` draws the gauge at an index from 0 to `count` − 1; an empty cell stays blank.
+/// Every value text in the grid gets one size (`GaugeLook.valueSize`), so no style looks huge next to another.
 struct GaugeGrid<Cell: View>: View {
     let count: Int
     @ViewBuilder let cell: (Int) -> Cell
@@ -435,6 +464,8 @@ struct GaugeGrid<Cell: View>: View {
     var body: some View {
         GeometryReader { geo in
             let grid = GaugeLayout.grid(for: count, wide: geo.size.width > geo.size.height)
+            let cellSize = CGSize(width: geo.size.width / CGFloat(grid.columns) - 2 * GaugeLook.gap,
+                                  height: geo.size.height / CGFloat(grid.rows) - 2 * GaugeLook.gap)
             VStack(spacing: 0) {
                 ForEach(0..<grid.rows, id: \.self) { row in
                     HStack(spacing: 0) {
@@ -448,6 +479,34 @@ struct GaugeGrid<Cell: View>: View {
                     }
                 }
             }
+            .environment(\.gaugeValueSize, GaugeLook.valueSize(cell: cellSize))
         }
     }
+}
+
+/// Landscape (iPhone): the navigation bar is hidden so the gauges get the whole screen.
+/// Any tap shows it again for 3 s, the way back. Portrait: always shown.
+private struct LandscapeFullScreen: ViewModifier {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @State private var taps = 0
+    @State private var showsBar = false
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(.rect)
+            // Simultaneous, so a tap on a gauge in the editor still opens its sheet.
+            .simultaneousGesture(TapGesture().onEnded { taps += 1 })
+            .toolbar(verticalSizeClass == .compact && !showsBar ? .hidden : .visible, for: .navigationBar)
+            .task(id: taps) {
+                guard taps > 0 else { return }
+                showsBar = true
+                // A new tap cancels this wait and starts the 3 s again.
+                try? await Task.sleep(for: .seconds(3))
+                if !Task.isCancelled { showsBar = false }
+            }
+    }
+}
+
+extension View {
+    func landscapeFullScreen() -> some View { modifier(LandscapeFullScreen()) }
 }

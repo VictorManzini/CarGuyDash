@@ -6,17 +6,22 @@ import SwiftUI
 struct LiveGaugesView: View {
     let scanner: BluetoothScanner
     @State private var unitSettings = UnitSettings()
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
             VStack(spacing: GaugeLook.gap) {
-                Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
+                // Landscape: the gauges get the whole screen.
+                if verticalSizeClass != .compact {
+                    Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
+                }
                 let slots = scanner.layout.visibleSlots
                 GaugeGrid(count: slots.count) { gauge(slots[$0]) }
             }
             .padding(.horizontal)
         }
+        .landscapeFullScreen()
         .navigationTitle("Live gauges")
         .navigationBarTitleDisplayMode(.inline)
         .background(.black)

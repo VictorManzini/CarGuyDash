@@ -41,6 +41,12 @@ struct DashboardView: View {
         #if DEBUG
         .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView(scanner: scanner) }
         .navigationDestination(isPresented: $openLiveGauges) { LiveGaugesView(scanner: scanner) }
+        .task {
+            // Simulator screenshots in landscape (it cannot be rotated without the Simulator window): `-forceLandscape YES`.
+            guard UserDefaults.standard.bool(forKey: "forceLandscape"),
+                  let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+        }
         .navigationDestination(isPresented: $openGaugeEditor) {
             if let car = scanner.profiles.active {
                 GaugeLayoutEditor(units: unitSettings.units, profiles: scanner.profiles, carID: car.id)

@@ -34,6 +34,7 @@ struct GaugeLayoutEditor: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal)
+        .landscapeFullScreen()
         .navigationTitle("Gauges")
         .navigationBarTitleDisplayMode(.inline)
         .background(.black)
