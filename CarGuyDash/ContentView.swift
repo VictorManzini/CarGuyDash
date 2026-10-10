@@ -39,6 +39,7 @@ struct ContentView: View {
                 .disabled(scanner.simulator == nil || !scanner.isReady)
             NavigationLink("Gauge preview") { GaugePreviewView(scanner: scanner) }
             NavigationLink("Live gauges") { LiveGaugesView(scanner: scanner) }
+            NavigationLink("Gauge lab") { GaugeLabView(scanner: scanner) }
             #endif
 
             HStack {

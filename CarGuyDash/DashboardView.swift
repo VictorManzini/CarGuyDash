@@ -16,6 +16,8 @@ struct DashboardView: View {
     @State private var openLiveGauges = UserDefaults.standard.bool(forKey: "openLiveGauges")
     /// Simulator check: `-openGaugeEditor YES` opens the active car's gauge editor (Settings → Cars → car → Gauges) directly.
     @State private var openGaugeEditor = UserDefaults.standard.bool(forKey: "openGaugeEditor")
+    /// Screenshots: `-openGaugeLab YES` opens the gauge look lab directly.
+    @State private var openGaugeLab = UserDefaults.standard.bool(forKey: "openGaugeLab")
     #endif
 
     var body: some View {
@@ -41,6 +43,7 @@ struct DashboardView: View {
         #if DEBUG
         .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView(scanner: scanner) }
         .navigationDestination(isPresented: $openLiveGauges) { LiveGaugesView(scanner: scanner) }
+        .navigationDestination(isPresented: $openGaugeLab) { GaugeLabView(scanner: scanner) }
         .task {
             // Simulator screenshots in landscape (it cannot be rotated without the Simulator window): `-forceLandscape YES`.
             guard UserDefaults.standard.bool(forKey: "forceLandscape"),
