@@ -298,6 +298,7 @@ private struct Hub: Shape {
 // MARK: - Digital
 
 /// Big number: white, red only from the redline. Its size follows the space it has.
+/// The number (or Stand By / N/A) is centered in the space above the name; the name stays on the row's shared line.
 struct DigitalGauge: View {
     let reading: GaugeReading
 
@@ -305,7 +306,7 @@ struct DigitalGauge: View {
         GaugeCell(reading: reading) {
             GeometryReader { geo in
                 GaugeValue(reading: reading, size: min(geo.size.width * 0.34, geo.size.height * 0.6))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
