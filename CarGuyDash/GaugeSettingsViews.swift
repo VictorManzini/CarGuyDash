@@ -21,8 +21,7 @@ struct GaugeLayoutEditor: View {
         let layout = profiles.binding(carID, \.layout, fallback: .standard)
         let count = layout.wrappedValue.count
         GaugeGrid(count: count) { index in
-            // Tapping the gauge whose sheet is open closes it; another gauge switches the sheet to that one.
-            Button { selected = selected == index ? nil : index } label: {
+            Button { selected = index } label: {
                 gauge(layout.wrappedValue.slots[index])
                     .padding(GaugeLook.gapSmall)
                     .overlay {
@@ -35,10 +34,6 @@ struct GaugeLayoutEditor: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal)
-        // The sheet lets taps through to the grid, so iOS no longer closes it on an outside tap: an empty area does it here.
-        // The gauge buttons take their own taps first.
-        .contentShape(.rect)
-        .onTapGesture { selected = nil }
         .navigationTitle("Gauges")
         .navigationBarTitleDisplayMode(.inline)
         .background(.black)
@@ -71,9 +66,8 @@ struct GaugeLayoutEditor: View {
                         .disabled(count == 1)
                     }
                 }
+                // A normal modal sheet: the grid is blocked while it is open, and a tap outside it only closes it.
                 .presentationDetents([.height(Self.sheetHeight)])
-                // The grid stays usable above the sheet: tapping another gauge switches the sheet to it.
-                .presentationBackgroundInteraction(.enabled(upThrough: .height(Self.sheetHeight)))
             }
         }
     }
