@@ -52,7 +52,7 @@ struct DashboardView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink("Tests") { ContentView(scanner: scanner) }
-                NavigationLink { SettingsView(unitSettings: unitSettings) } label: { Image(systemName: "gearshape") }
+                NavigationLink { SettingsView(unitSettings: unitSettings, gaugeLayout: scanner.gaugeLayout) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
             }
         }
