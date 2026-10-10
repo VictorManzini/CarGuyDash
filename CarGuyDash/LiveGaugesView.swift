@@ -11,7 +11,7 @@ struct LiveGaugesView: View {
     var body: some View {
         // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            VStack(spacing: 8) {
+            VStack(spacing: GaugeLook.gap) {
                 Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
                 GeometryReader { geo in
                     let slots = scanner.gaugeLayout.layout.visibleSlots
@@ -22,7 +22,7 @@ struct LiveGaugesView: View {
                                 ForEach(0..<grid.columns, id: \.self) { column in
                                     let index = row * grid.columns + column
                                     Group {
-                                        if index < slots.count { gauge(slots[index]).padding(8) } else { Color.clear }
+                                        if index < slots.count { gauge(slots[index]).padding(GaugeLook.gap) } else { Color.clear }
                                     }
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 }

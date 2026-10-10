@@ -17,8 +17,8 @@ struct GaugePreviewView: View {
         let text = state.isEmpty ? sensor.text(for: value, units: unitSettings.units) : state
         let reading = GaugeReading(sensor: sensor, text: text, value: value, range: range, units: unitSettings.units)
         ScrollView {
-            VStack(spacing: 24) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 24) {
+            VStack(spacing: GaugeLook.gapLarge) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: GaugeLook.gapLarge)], spacing: GaugeLook.gapLarge) {
                     AnalogGauge(reading: reading).frame(height: 210)
                     DigitalGauge(reading: reading).frame(height: 210)
                     BarGauge(reading: reading).frame(height: 210)
