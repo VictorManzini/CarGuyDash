@@ -56,6 +56,17 @@ struct GaugeLayoutTests {
         #expect(GaugeSource.all.count == Sensor.allCases.count + 1)
     }
 
+    @Test func anOldLayoutWithoutALookOpensAsA() throws {
+        let old = #"{"slots":[{"source":"0C","style":"Analog"},{"source":"boost","style":"Bar"}],"count":2}"#
+        let layout = try JSONDecoder().decode(GaugeLayout.self, from: Data(old.utf8))
+        #expect(layout.count == 2)
+        #expect(layout.slots == [GaugeSlot(source: .sensor(.rpm), style: .analog, look: .oem),
+                                 GaugeSlot(source: .boost, style: .bar, look: .oem)])
+        // A saved look comes back.
+        let saved = try JSONEncoder().encode(GaugeSlot(source: .sensor(.oilTemp), style: .arc, look: .race))
+        #expect(try JSONDecoder().decode(GaugeSlot.self, from: saved).look == .race)
+    }
+
     @MainActor @Test func aCarsLayoutIsSavedAndLoadedAgain() throws {
         let suite = "GaugeLayoutTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

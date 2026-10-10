@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Settings → Gauges: one car's gauges drawn as on the gauges page, each with a fixed sample value (the middle of its normal range).
-/// Tapping a gauge opens a short sheet (sensor, style, remove); "+" adds one at the end. Saved on every change.
+/// Tapping a gauge opens a short sheet (sensor, style, look, remove); "+" adds one at the end. Saved on every change.
 struct GaugeLayoutEditor: View {
     let units: Units
     let profiles: CarProfiles
@@ -15,7 +15,7 @@ struct GaugeLayoutEditor: View {
         #endif
     }()
 
-    private static let sheetHeight: CGFloat = 280
+    private static let sheetHeight: CGFloat = 300
 
     var body: some View {
         let layout = profiles.binding(carID, \.layout, fallback: .standard)
@@ -58,6 +58,9 @@ struct GaugeLayoutEditor: View {
                         Picker("Style", selection: layout.slots[index].style) {
                             ForEach(GaugeStyle.allCases, id: \.self) { Text($0.rawValue) }
                         }
+                        Picker("Look", selection: layout.slots[index].look) {
+                            ForEach(GaugeFinish.allCases, id: \.self) { Text($0.title) }
+                        }
                     }
                     Section {
                         Button("Remove gauge", role: .destructive) {
@@ -80,7 +83,7 @@ struct GaugeLayoutEditor: View {
         let value = (range.normalLow + range.normalHigh) / 2
         let reading = GaugeReading(sensor: source.sensor, text: source.sensor.text(for: value, units: units), value: value,
                                    range: range, units: units, name: source.name)
-        return StyledGauge(style: slot.style, reading: reading)
+        return StyledGauge(style: slot.style, finish: slot.look, reading: reading)
     }
 }
 

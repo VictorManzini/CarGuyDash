@@ -19,33 +19,25 @@ nonisolated struct GaugeReading {
 
 // MARK: - Shared look
 
-/// The one set of measures, colors and type every style uses, so the four look like one family.
+/// The one set of measures, colors and motion every style uses, so the four look like one family.
 enum GaugeLook {
     /// Spacing scale: 4 / 8 / 16.
     static let gapSmall: CGFloat = 4
     static let gap: CGFloat = 8
     static let gapLarge: CGFloat = 16
-    /// Thickness of the bar and of the arc, the same in both.
-    static let track: CGFloat = 14
-    /// The empty part of the bar and arc: very dark grey, opaque.
-    static let trackColor = Color(red: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255)
 
-    /// Numbers and dial labels. Secondary: units, names, Stand By / N/A (about 7:1 on black).
+    /// Numbers. Secondary: units, names, Stand By / N/A (about 7:1 on black).
     static let primary = Color(white: 0.94)
     static let secondary = Color(white: 0.62)
+    /// The empty part of a bar or arc track, and an unlit LED block.
+    static let unlit = Color(white: 0.1)
 
     /// The dial arc of the analog and arc styles: 260°, open at the bottom, starting lower left.
     static let arcStart = 140.0
     static let arcSweep = 260.0
-    /// How much of the square the arc style uses: down to the arc's ends (sin 40°).
-    static let arcHeight = 0.5 + 0.5 * sin(40 * Double.pi / 180)
 
     /// Critically damped: follows the value smoothly, never overshoots.
     static let motion = Animation.spring(response: 0.3, dampingFraction: 1)
-
-    /// Same family everywhere: SF Pro, semibold numbers with fixed-width digits, medium units.
-    static func number(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold).monospacedDigit() }
-    static func unit(_ size: CGFloat) -> Font { .system(size: size * 0.36, weight: .medium) }
 
     /// The value text size every Digital, Bar and Arc gauge of one grid shares, from the cell's size:
     /// a fifth of the cell's smaller side once the name line (about 24 pt with its gap) is taken off.
@@ -75,12 +67,165 @@ extension GaugeColor {
 }
 
 extension GaugeRange {
-    var gradientStops: [Gradient.Stop] { stops.map { Gradient.Stop(color: $0.color.color, location: $0.at) } }
+    /// The fixed gradient blue → green → yellow → orange → red from the color stops, squeezed into `length`
+    /// of the gradient's run (1 = all of it; an arc of 260° inside a 360° conic gradient = 260 / 360).
+    func gradient(length: Double = 1) -> Gradient {
+        Gradient(stops: stops.map { Gradient.Stop(color: $0.color.color, location: $0.at * length) })
+    }
+
+    /// The gradient's color at a place on the scale (0 = min, 1 = max): the color of one LED block of the race dash.
+    func color(atFraction fraction: Double) -> Color { Color(rgb: rgb(at: min + (max - min) * fraction)) }
 }
 
-extension GaugeReading {
-    /// The gradient's color where the fill ends, for the glow at its tip.
-    var tipColor: Color { Color(rgb: range.rgb(at: number ?? range.min)) }
+// MARK: - Looks
+
+/// What one look changes: the materials, the ink and the analog dial's proportions (the values tried in the Gauge lab).
+private struct FinishSpec {
+    /// Bezel thickness as a fraction of the radius; its color at the top (lit) and at the bottom.
+    let bezel: Double
+    let bezelTop: Color
+    let bezelBottom: Color
+    let faceCenter: Color
+    let faceEdge: Color
+    /// Ticks and numbers.
+    let ink: Color
+    /// Analog numbers and zone bands, as fractions of the face radius.
+    let numberSize: Double
+    let zoneWidth: Double
+    let needle: Color
+    /// The glass reflection's opacity at its brightest; `dome` adds a curved highlight like a domed lens.
+    let glass: Double
+    let dome: Bool
+}
+
+extension GaugeFinish {
+    /// A: matte black face, thin satin-chrome bezel, thin white ink, orange-red needle.
+    /// B: big condensed numbers, high contrast, LED blocks, shift lights on RPM.
+    /// C: deep black face, thick dark-metal bezel, backlit white ink, red peak marker, domed glass.
+    fileprivate var spec: FinishSpec {
+        switch self {
+        case .oem:
+            FinishSpec(bezel: 0.05, bezelTop: Color(white: 0.82), bezelBottom: Color(white: 0.3),
+                       faceCenter: Color(white: 0.085), faceEdge: Color(white: 0.045), ink: Color(white: 0.92),
+                       numberSize: 0.13, zoneWidth: 0.045, needle: Color(red: 1, green: 0.33, blue: 0.1), glass: 0.05, dome: false)
+        case .race:
+            FinishSpec(bezel: 0.035, bezelTop: Color(white: 0.42), bezelBottom: Color(white: 0.1),
+                       faceCenter: Color(white: 0.03), faceEdge: .black, ink: .white,
+                       numberSize: 0.2, zoneWidth: 0.06, needle: GaugeColor.red.color, glass: 0.03, dome: false)
+        case .aftermarket:
+            FinishSpec(bezel: 0.11, bezelTop: Color(white: 0.46), bezelBottom: Color(white: 0.06),
+                       faceCenter: Color(white: 0.045), faceEdge: .black, ink: Color(white: 0.96),
+                       numberSize: 0.12, zoneWidth: 0.03, needle: Color(red: 1, green: 0.27, blue: 0.12), glass: 0.1, dome: true)
+        }
+    }
+
+    /// DIN numbers with fixed-width digits: Condensed for the race dash, Alternate for the others. Fixed size (no Dynamic Type):
+    /// every size is measured from the gauge.
+    func font(_ size: CGFloat) -> Font {
+        .custom(self == .race ? "DINCondensed-Bold" : "DINAlternate-Bold", fixedSize: size).monospacedDigit()
+    }
+}
+
+// MARK: - Shared drawing
+
+/// A round gauge's geometry: center, radius and the 260° scale.
+private struct Dial {
+    let center: CGPoint
+    let r: CGFloat
+
+    init(_ size: CGSize) {
+        center = CGPoint(x: size.width / 2, y: size.height / 2)
+        r = min(size.width, size.height) / 2
+    }
+
+    func circle(_ radius: CGFloat, dy: CGFloat = 0) -> Path {
+        Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius + dy, width: 2 * radius, height: 2 * radius))
+    }
+
+    func angle(_ fraction: Double) -> Double { Angle.degrees(GaugeLook.arcStart + GaugeLook.arcSweep * fraction).radians }
+
+    func point(_ fraction: Double, _ radius: CGFloat) -> CGPoint {
+        CGPoint(x: center.x + radius * cos(angle(fraction)), y: center.y + radius * sin(angle(fraction)))
+    }
+
+    func arc(_ from: Double, _ to: Double, radius: CGFloat) -> Path {
+        var path = Path()
+        path.addArc(center: center, radius: radius, startAngle: .radians(angle(from)), endAngle: .radians(angle(to)), clockwise: false)
+        return path
+    }
+}
+
+/// The zones painted on the analog scale, as fractions: blue below normalLow (when there is one), then GaugeRange's stops
+/// past the normal band: yellow from normalHigh, orange from halfway to the redline, red from the redline to max.
+private func zones(_ range: GaugeRange) -> [(from: Double, to: Double, color: Color)] {
+    let orange = (range.normalHigh + range.redline) / 2
+    var values: [(Double, Double, GaugeColor)] = range.normalLow > range.min ? [(range.min, range.normalLow, .blue)] : []
+    values += [(range.normalHigh, orange, .yellow), (orange, range.redline, .orange), (range.redline, range.max, .red)]
+    return values.map { (range.fraction($0.0), range.fraction($0.1), $0.2.color) }.filter { $0.from < $0.to }
+}
+
+/// Round bezel lit from the top with a darker bottom, then the face, recessed: a soft shadow inside the rim,
+/// heavier at the top where the bezel blocks the light. Returns the face radius.
+private func drawRoundHousing(_ spec: FinishSpec, _ d: Dial, in ctx: inout GraphicsContext) -> CGFloat {
+    let r = d.r
+    let top = CGPoint(x: d.center.x, y: d.center.y - r), bottom = CGPoint(x: d.center.x, y: d.center.y + r)
+    ctx.fill(d.circle(r), with: .linearGradient(Gradient(colors: [spec.bezelTop, spec.bezelBottom]), startPoint: top, endPoint: bottom))
+    // Inner chamfer, lit the other way, so the ring reads as raised.
+    ctx.fill(d.circle(r * (1 - spec.bezel * 0.4)),
+             with: .linearGradient(Gradient(colors: [spec.bezelBottom, spec.bezelTop.opacity(0.75)]), startPoint: top, endPoint: bottom))
+    let faceR = r * (1 - spec.bezel)
+    ctx.fill(d.circle(faceR), with: .radialGradient(Gradient(colors: [spec.faceCenter, spec.faceEdge]),
+                                                     center: d.center, startRadius: 0, endRadius: faceR))
+    ctx.drawLayer { layer in
+        layer.clip(to: d.circle(faceR))
+        layer.addFilter(.blur(radius: r * 0.035))
+        var shade = Path(CGRect(x: d.center.x - 2 * r, y: d.center.y - 2 * r, width: 4 * r, height: 4 * r))
+        shade.addPath(d.circle(faceR * 0.96, dy: r * 0.035))
+        layer.fill(shade, with: .color(.black.opacity(0.85)), style: FillStyle(eoFill: true))
+    }
+    ctx.stroke(d.circle(faceR), with: .color(.black), lineWidth: max(1, r * 0.01))
+    return faceR
+}
+
+/// A very faint reflection on the top half of the glass; a domed lens also gets a thin curved highlight.
+private func drawGlass(_ spec: FinishSpec, clip: Path, top: CGFloat, middle: CGFloat, in ctx: inout GraphicsContext,
+                       dome: Path, size: CGFloat) {
+    ctx.drawLayer { layer in
+        layer.clip(to: clip)
+        let rect = clip.boundingRect
+        // Soft edges: a sharp edge would read as a drawn line, not as light on glass.
+        layer.addFilter(.blur(radius: size * 0.04))
+        layer.fill(Path(ellipseIn: CGRect(x: rect.minX - rect.width * 0.05, y: top - rect.height * 0.3,
+                                          width: rect.width * 1.1, height: middle - top + rect.height * 0.3)),
+                   with: .linearGradient(Gradient(colors: [.white.opacity(spec.glass), .white.opacity(0)]),
+                                         startPoint: CGPoint(x: rect.midX, y: top), endPoint: CGPoint(x: rect.midX, y: middle)))
+        if spec.dome {
+            layer.stroke(dome, with: .color(.white.opacity(spec.glass * 1.6)), style: StrokeStyle(lineWidth: size * 0.025, lineCap: .round))
+        }
+    }
+}
+
+/// The glass of a round gauge, with the dome's highlight on the upper left.
+private func drawRoundGlass(_ spec: FinishSpec, _ d: Dial, face f: CGFloat, in ctx: inout GraphicsContext) {
+    var dome = Path()
+    dome.addArc(center: d.center, radius: f * 0.86, startAngle: .degrees(205), endAngle: .degrees(250), clockwise: false)
+    drawGlass(spec, clip: d.circle(f), top: d.center.y - f, middle: d.center.y, in: &ctx, dome: dome, size: f)
+}
+
+/// A Canvas whose `at` (where the value sits on the scale, 0...1) is animated: with `.animation(GaugeLook.motion, value:)`
+/// the needle, the fill and the LED blocks follow the value smoothly instead of jumping between readings.
+private struct AnimatedCanvas: View, Animatable {
+    var at: Double
+    let draw: (inout GraphicsContext, CGSize, Double) -> Void
+
+    var animatableData: Double {
+        get { at }
+        set { at = newValue }
+    }
+
+    var body: some View {
+        Canvas { context, size in draw(&context, size, at) }
+    }
 }
 
 /// Every style: the gauge sits on the bottom of its space, the name always `GaugeLook.gap` below it,
@@ -102,15 +247,17 @@ private struct GaugeCell<Content: View>: View {
     }
 }
 
-/// Number and unit as one text, so they share one baseline and shrink together.
-/// Red from the redline. "Stand By" / "N/A" replace both, in grey. Inside a `GaugeGrid` the grid's size wins over `preferredSize`.
+/// Number and unit as one text in the look's DIN font, so they share one baseline and shrink together.
+/// White, red from the redline. "Stand By" / "N/A" replace both, in grey. Inside a `GaugeGrid` the grid's size wins over `preferredSize`.
 private struct GaugeValue: View {
     let reading: GaugeReading
+    let finish: GaugeFinish
     let preferredSize: CGFloat
     @Environment(\.gaugeValueSize) private var gridSize
 
-    init(reading: GaugeReading, size: CGFloat) {
+    init(reading: GaugeReading, finish: GaugeFinish, size: CGFloat) {
         self.reading = reading
+        self.finish = finish
         preferredSize = size
     }
 
@@ -122,17 +269,21 @@ private struct GaugeValue: View {
             } else {
                 let unit = reading.sensor.displayUnit(reading.units)
                 let number = Text(reading.text)
-                    .font(GaugeLook.number(size))
-                    .tracking(-size * 0.02) // big digits: a little tighter
+                    .font(finish.font(size))
                     .foregroundStyle(reading.isRedline ? GaugeColor.red.color : GaugeLook.primary)
                 // Thin space between number and unit.
-                let suffix = Text(unit.isEmpty ? "" : "\u{2009}" + unit).font(GaugeLook.unit(size)).foregroundStyle(GaugeLook.secondary)
+                let suffix = Text(unit.isEmpty ? "" : "\u{2009}" + unit).font(finish.font(size * 0.36)).foregroundStyle(GaugeLook.secondary)
                 Text("\(number)\(suffix)")
             }
         }
         .lineLimit(1)
         .minimumScaleFactor(0.4)
     }
+}
+
+/// The min and max of the scale in the chosen units, whole numbers, as drawn at both ends of the arc and the bar.
+private func endLabel(_ value: Double) -> Text {
+    Text(value.formatted(.number.precision(.fractionLength(0)).grouping(.never)))
 }
 
 // MARK: - Analog
@@ -167,168 +318,155 @@ nonisolated struct DialScale {
     }
 }
 
-/// Old racing tachometer: metallic rim, dark face with an inner shadow, numbers on an outer ring,
-/// ticks and the orange / red bands inside them, red needle that stops at the ticks (never over a number).
+/// A round dial in the slot's look: bezel lit from the top, recessed face, the zones on the scale's outer edge,
+/// ticks with DIN numbers inside them, needle with a drop shadow and a black cap, glass on top.
+/// Race dash on RPM: shift lights above the dial. Aftermarket: a red peak marker at the highest value seen.
 struct AnalogGauge: View {
     let reading: GaugeReading
-
-    /// Radii, as a fraction of the dial's radius.
-    private enum R {
-        static let face = 0.955
-        static let labelInner = 0.74
-        static let band = 0.7
-        static let tickOuter = 0.68
-        static let majorInner = 0.56
-        static let minorInner = 0.62
-        static let needle = 0.66
-    }
+    let finish: GaugeFinish
+    /// The highest value since the gauge appeared (aftermarket peak marker); starts again when the range changes (another sensor).
+    @State private var peak: Double?
 
     var body: some View {
         GaugeCell(reading: reading) {
-            ZStack {
-                Canvas { context, size in drawDial(in: &context, size: size) }
-                Group {
-                    Needle(length: R.needle)
-                        .fill(GaugeColor.red.color)
-                        .shadow(color: GaugeColor.red.color.opacity(0.5), radius: 3)
-                        .rotationEffect(.degrees(GaugeLook.arcStart + GaugeLook.arcSweep * reading.range.fraction(reading.number ?? reading.range.min)))
-                        .animation(GaugeLook.motion, value: reading.number)
-                    Hub().fill(.black).overlay(Hub().stroke(Color(white: 0.35), lineWidth: 1))
+            VStack(spacing: GaugeLook.gap) {
+                if finish == .race, reading.sensor == .rpm {
+                    ShiftLights(range: reading.range, value: reading.number)
                 }
-                // Needle and hub hidden without a number: they would cross the "Stand By" / "N/A" text.
-                .opacity(reading.number == nil ? 0 : 1)
-                if reading.number == nil {
-                    // Stand By / N/A: near-transparent grey layer + red text in the center.
-                    Circle().fill(.gray.opacity(0.35))
-                    GeometryReader { geo in
-                        Text(reading.text)
-                            .font(.system(size: geo.size.width * 0.08, weight: .semibold))
-                            .foregroundStyle(GaugeColor.red.color)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ZStack {
+                    AnimatedCanvas(at: reading.range.fraction(reading.number ?? reading.range.min)) { context, size, at in
+                        draw(&context, size, at: at)
+                    }
+                    .animation(GaugeLook.motion, value: reading.number)
+                    if reading.number == nil {
+                        // Stand By / N/A: near-transparent grey layer + red text in the center (needle and cap hidden).
+                        Circle().fill(.gray.opacity(0.35))
+                        GeometryReader { geo in
+                            Text(reading.text)
+                                .font(.system(size: geo.size.width * 0.08, weight: .semibold))
+                                .foregroundStyle(GaugeColor.red.color)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
+                .aspectRatio(1, contentMode: .fit)
             }
-            .aspectRatio(1, contentMode: .fit)
         }
+        .onChange(of: reading.number, initial: true) {
+            if let number = reading.number { peak = max(peak ?? number, number) }
+        }
+        .onChange(of: reading.range) { peak = reading.number }
     }
 
-    private func drawDial(in context: inout GraphicsContext, size: CGSize) {
-        let r = min(size.width, size.height) / 2
-        let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        func circle(_ radius: CGFloat) -> Path {
-            Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius))
-        }
-        func angle(_ fraction: Double) -> Double { Angle.degrees(GaugeLook.arcStart + GaugeLook.arcSweep * fraction).radians }
-        func point(_ fraction: Double, _ radius: CGFloat) -> CGPoint {
-            CGPoint(x: center.x + radius * cos(angle(fraction)), y: center.y + radius * sin(angle(fraction)))
-        }
+    private func draw(_ ctx: inout GraphicsContext, _ size: CGSize, at: Double) {
+        let spec = finish.spec, range = reading.range
+        let d = Dial(size)
+        let f = drawRoundHousing(spec, d, in: &ctx)
 
-        // Face: lighter in the middle, then an inner shadow along the rim so it sits below it.
-        context.fill(circle(r * R.face), with: .radialGradient(Gradient(colors: [Color(white: 0.11), Color(white: 0.03)]),
-                                                               center: center, startRadius: 0, endRadius: r * R.face))
-        context.drawLayer { layer in
-            layer.clip(to: circle(r * R.face))
-            layer.addFilter(.blur(radius: r * 0.05))
-            layer.stroke(circle(r * R.face), with: .color(.black.opacity(0.9)), lineWidth: r * 0.12)
-        }
-
-        // Rim: brushed metal (light and dark streaks around it), lit from the top, thin dark seam inside.
-        let rimRadius = r * (1 + R.face) / 2, rimWidth = r * (1 - R.face)
-        context.stroke(circle(rimRadius), with: .conicGradient(
-            Gradient(colors: [0.78, 0.36, 0.62, 0.28, 0.7, 0.32, 0.58, 0.3, 0.78].map { Color(white: $0) }),
-            center: center, angle: .degrees(-45)), lineWidth: rimWidth)
-        context.stroke(circle(rimRadius), with: .linearGradient(
-            Gradient(colors: [.white.opacity(0.25), .clear, .black.opacity(0.35)]),
-            startPoint: CGPoint(x: center.x, y: center.y - r), endPoint: CGPoint(x: center.x, y: center.y + r)), lineWidth: rimWidth)
-        context.stroke(circle(r * R.face), with: .color(.black), lineWidth: max(1, r * 0.008))
-
-        // Bands just outside the ticks: orange from normalHigh to the redline, red from the redline to max.
-        // None when they have no width (normalHigh = redline = max).
-        let orangeFrom = reading.range.fraction(reading.range.normalHigh)
-        let redFrom = reading.range.fraction(reading.range.redline)
-        for (from, to, color) in [(orangeFrom, redFrom, GaugeColor.orange), (redFrom, 1, .red)] where from < to {
-            var band = Path()
-            band.addArc(center: center, radius: r * R.band, startAngle: .radians(angle(from)), endAngle: .radians(angle(to)), clockwise: false)
-            context.stroke(band, with: .color(color.color), lineWidth: r * 0.035)
+        // Zones as solid bands on the scale's outer edge.
+        for zone in zones(range) {
+            ctx.stroke(d.arc(zone.from, zone.to, radius: f * 0.9), with: .color(zone.color), lineWidth: f * spec.zoneWidth)
         }
 
         // Ticks and numbers in the chosen units.
-        let display = reading.range.converted(for: reading.sensor, reading.units)
+        let display = range.converted(for: reading.sensor, reading.units)
         let scale = DialScale(min: display.min, max: display.max)
         let span = display.max - display.min
-        guard span > 0 else { return }
-        func isRed(_ fraction: Double) -> Bool { redFrom < 1 && fraction >= redFrom - 0.0001 }
-        for tick in scale.ticks {
-            let fraction = (tick.value - display.min) / span
-            var path = Path()
-            path.move(to: point(fraction, r * R.tickOuter))
-            path.addLine(to: point(fraction, r * (tick.isMajor ? R.majorInner : R.minorInner)))
-            let color = isRed(fraction) ? GaugeColor.red.color : GaugeLook.primary
-            context.stroke(path, with: .color(color.opacity(tick.isMajor ? 1 : 0.55)), lineWidth: r * (tick.isMajor ? 0.022 : 0.01))
+        if span > 0 {
+            for tick in scale.ticks {
+                let fraction = (tick.value - display.min) / span
+                var path = Path()
+                path.move(to: d.point(fraction, f * 0.86))
+                path.addLine(to: d.point(fraction, f * (tick.isMajor ? 0.74 : 0.8)))
+                ctx.stroke(path, with: .color(spec.ink.opacity(tick.isMajor ? 1 : 0.6)), lineWidth: f * (tick.isMajor ? 0.022 : 0.01))
+            }
+            let majors = scale.ticks.filter(\.isMajor)
+            // One size per look; only labels too long to keep apart (kPa: "-100") shrink.
+            var fontSize = f * spec.numberSize
+            let widest = majors.map { ctx.resolve(Text(scale.label($0.value)).font(finish.font(fontSize))).measure(in: size).width }.max() ?? 0
+            if widest > f * 0.28 { fontSize *= f * 0.28 / widest }
+            let labelRadius = f * (0.72 - spec.numberSize * 0.75)
+            for tick in majors {
+                ctx.draw(Text(scale.label(tick.value)).font(finish.font(fontSize)).foregroundStyle(spec.ink),
+                         at: d.point((tick.value - display.min) / span, labelRadius))
+            }
         }
-
-        // Numbers: each measured and pushed out to start on the same circle just outside the ticks, centered on
-        // its major tick's angle, so a wide one ("-0.5", "200") keeps the same distance from the ticks as a narrow one.
-        let majors = scale.ticks.filter(\.isMajor)
-        // One size on every dial; only labels too long for the ring (kPa: "-100") shrink, so they stay off the rim.
-        var fontSize = r * 0.11
-        let widest = majors.map { context.resolve(Text(scale.label($0.value)).font(GaugeLook.number(fontSize))).measure(in: size).width }.max() ?? 0
-        if widest > r * 0.19 { fontSize *= r * 0.19 / widest }
-        for tick in majors {
-            let fraction = (tick.value - display.min) / span
-            let label = context.resolve(Text(scale.label(tick.value))
-                .font(GaugeLook.number(fontSize))
-                .foregroundStyle(isRed(fraction) ? GaugeColor.red.color : GaugeLook.primary))
-            let box = label.measure(in: size)
-            // Half the box's reach along the radius; the digits' visible height is about 0.72 of the line.
-            let reach = (box.width * abs(cos(angle(fraction))) + box.height * 0.72 * abs(sin(angle(fraction)))) / 2
-            context.draw(label, at: point(fraction, r * R.labelInner + reach))
-        }
-
         let unit = reading.sensor.displayUnit(reading.units)
-        context.draw(Text(scale.divisor == 1000 ? "×1000 \(unit)" : unit)
-                        .font(.system(size: r * 0.085, weight: .medium))
-                        .foregroundStyle(GaugeLook.secondary),
-                     at: CGPoint(x: center.x, y: center.y + r * 0.34))
+        ctx.draw(Text(scale.divisor == 1000 ? "×1000 \(unit)" : unit).font(finish.font(f * 0.08)).foregroundStyle(spec.ink.opacity(0.6)),
+                 at: CGPoint(x: d.center.x, y: d.center.y + f * 0.4))
+
+        if reading.number != nil {
+            if finish == .aftermarket, let peak, peak > range.min {
+                var mark = Path()
+                mark.move(to: d.point(range.fraction(peak), f * 0.94))
+                mark.addLine(to: d.point(range.fraction(peak), f * 0.78))
+                ctx.stroke(mark, with: .color(GaugeColor.red.color), style: StrokeStyle(lineWidth: f * 0.03, lineCap: .round))
+            }
+
+            // Needle with a soft drop shadow (depth, not a glow), then the black center cap.
+            ctx.drawLayer { layer in
+                layer.addFilter(.shadow(color: .black.opacity(0.7), radius: f * 0.02, x: 0, y: f * 0.02))
+                var needle = Path()
+                needle.move(to: CGPoint(x: -f * 0.16, y: -f * 0.028))
+                needle.addLine(to: CGPoint(x: f * 0.84, y: -f * 0.006))
+                needle.addLine(to: CGPoint(x: f * 0.84, y: f * 0.006))
+                needle.addLine(to: CGPoint(x: -f * 0.16, y: f * 0.028))
+                needle.closeSubpath()
+                let place = CGAffineTransform(rotationAngle: d.angle(at))
+                    .concatenating(CGAffineTransform(translationX: d.center.x, y: d.center.y))
+                layer.fill(needle.applying(place), with: .color(spec.needle))
+                layer.fill(d.circle(f * 0.085), with: .radialGradient(Gradient(colors: [Color(white: 0.2), .black]),
+                                                                      center: CGPoint(x: d.center.x, y: d.center.y - f * 0.03),
+                                                                      startRadius: 0, endRadius: f * 0.1))
+            }
+            ctx.stroke(d.circle(f * 0.085), with: .color(Color(white: 0.3)), lineWidth: max(0.5, f * 0.006))
+        }
+
+        drawRoundGlass(spec, d, face: f, in: &ctx)
     }
 }
 
-/// Points right (0°) from the center up to `length` × radius, with a short tail; rotated to the value.
-private struct Needle: Shape {
-    let length: Double
+/// Race dash shift lights: 4 green, 3 yellow, 3 red, lighting up one by one from normalHigh to the redline;
+/// all of them flash at the redline. All off without a value (Stand By, N/A).
+private struct ShiftLights: View {
+    let range: GaugeRange
+    let value: Double?
 
-    func path(in rect: CGRect) -> Path {
-        let r = min(rect.width, rect.height) / 2
-        let c = CGPoint(x: rect.midX, y: rect.midY)
-        var path = Path()
-        path.move(to: CGPoint(x: c.x - r * 0.14, y: c.y - r * 0.024))
-        path.addLine(to: CGPoint(x: c.x + r * length, y: c.y - r * 0.007))
-        path.addLine(to: CGPoint(x: c.x + r * length, y: c.y + r * 0.007))
-        path.addLine(to: CGPoint(x: c.x - r * 0.14, y: c.y + r * 0.024))
-        path.closeSubpath()
-        return path
-    }
-}
+    private static let colors: [GaugeColor] = [.green, .green, .green, .green, .yellow, .yellow, .yellow, .red, .red, .red]
 
-/// The black cap over the needle's pivot, sized with the dial.
-private struct Hub: Shape {
-    func path(in rect: CGRect) -> Path {
-        let radius = min(rect.width, rect.height) * 0.04
-        return Path(ellipseIn: CGRect(x: rect.midX - radius, y: rect.midY - radius, width: 2 * radius, height: 2 * radius))
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.125)) { timeline in
+            let flashing = value.map { $0 >= range.redline } ?? false
+            let flashOn = Int(timeline.date.timeIntervalSinceReferenceDate * 8) % 2 == 0
+            let span = range.redline - range.normalHigh
+            let lit = value.map { span > 0 ? Int((($0 - range.normalHigh) / span * 10).rounded(.down)) : 0 } ?? 0
+            HStack(spacing: GaugeLook.gapSmall) {
+                ForEach(Self.colors.indices, id: \.self) { index in
+                    let on = flashing ? flashOn : index < lit
+                    let color = Self.colors[index].color
+                    Circle()
+                        .fill(on ? color : color.opacity(0.13))
+                        .overlay(Circle().strokeBorder(.black.opacity(0.7), lineWidth: 1))
+                        .aspectRatio(1, contentMode: .fit)
+                }
+            }
+            .frame(maxHeight: 18)
+        }
     }
 }
 
 // MARK: - Digital
 
-/// Big number: white, red only from the redline. Its size follows the space it has.
+/// Big DIN number: white, red only from the redline. Its size follows the space it has.
 /// The number (or Stand By / N/A) is centered in the space above the name; the name stays on the row's shared line.
 struct DigitalGauge: View {
     let reading: GaugeReading
+    let finish: GaugeFinish
 
     var body: some View {
         GaugeCell(reading: reading) {
             GeometryReader { geo in
-                GaugeValue(reading: reading, size: min(geo.size.width * 0.34, geo.size.height * 0.6))
+                GaugeValue(reading: reading, finish: finish, size: min(geo.size.width * 0.34, geo.size.height * 0.6))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -337,119 +475,191 @@ struct DigitalGauge: View {
 
 // MARK: - Vertical bar
 
-/// The gradient is fixed on the scale; the fill only reveals it up to the current value.
+/// A rectangular instrument in the slot's look: bezel, recessed face, a vertical track that reveals the fixed gradient
+/// up to the value (race dash: LED blocks, each in the gradient's color at its place; unlit ones dark),
+/// ticks with min and max beside it, the value below.
 struct BarGauge: View {
     let reading: GaugeReading
+    let finish: GaugeFinish
 
     var body: some View {
         GaugeCell(reading: reading) {
-            GeometryReader { cell in
-            VStack(spacing: GaugeLook.gap) {
-                // Wider in a wider cell, never thinner than the arc's track. Also capped by the cell's height,
-                // so a short, wide landscape cell does not turn the bar into a fat pill.
-                let width = max(GaugeLook.track, min(cell.size.width * 0.13, cell.size.height * 0.12))
-                GeometryReader { geo in
-                    let height = geo.size.height * (reading.number.map(reading.range.fraction) ?? 0)
-                    ZStack(alignment: .bottom) {
-                        ZStack(alignment: .bottom) {
-                            GaugeLook.trackColor
-                            LinearGradient(stops: reading.range.gradientStops, startPoint: .bottom, endPoint: .top)
-                                .mask(alignment: .bottom) { Rectangle().frame(height: height) }
-                        }
-                        .clipShape(Capsule())
-                        if reading.number != nil {
-                            TipGlow(color: reading.tipColor, size: width).offset(y: -(height - width * 0.6))
-                        }
-                    }
-                    .animation(GaugeLook.motion, value: reading.number)
-                }
-                .frame(width: width)
-                // Same size as the arc's value in a cell of the same width (outside a grid).
-                GaugeValue(reading: reading, size: cell.size.width * 0.2)
+            AnimatedCanvas(at: reading.range.fraction(reading.number ?? reading.range.min)) { context, size, at in
+                draw(&context, size, at: at)
             }
-            .frame(width: cell.size.width, height: cell.size.height)
+            .animation(GaugeLook.motion, value: reading.number)
+            .overlay {
+                GeometryReader { geo in
+                    let face = Self.frame(geo.size, finish.spec).face
+                    GaugeValue(reading: reading, finish: finish, size: face.width * 0.25)
+                        .frame(width: face.width * 0.9)
+                        .position(x: face.midX, y: face.maxY - face.height * 0.13)
+                }
+            }
+            .aspectRatio(0.62, contentMode: .fit)
+        }
+    }
+
+    /// The bezel's outer edge, the face inside it and the face's corner radius.
+    private static func frame(_ size: CGSize, _ spec: FinishSpec) -> (outer: CGRect, face: CGRect, corner: CGFloat) {
+        let outer = CGRect(origin: .zero, size: size)
+        let side = min(size.width, size.height)
+        let bezel = side / 2 * spec.bezel * 1.4
+        return (outer, outer.insetBy(dx: bezel, dy: bezel), side * 0.14 - bezel)
+    }
+
+    private func draw(_ ctx: inout GraphicsContext, _ size: CGSize, at: Double) {
+        let spec = finish.spec, range = reading.range
+        let (outer, face, corner) = Self.frame(size, spec)
+        let side = min(size.width, size.height)
+        // Bezel lit from the top, then the recessed face (same recipe as the round housing).
+        ctx.fill(Path(roundedRect: outer, cornerRadius: side * 0.14),
+                 with: .linearGradient(Gradient(colors: [spec.bezelTop, spec.bezelBottom]),
+                                       startPoint: CGPoint(x: outer.midX, y: 0), endPoint: CGPoint(x: outer.midX, y: outer.maxY)))
+        let facePath = Path(roundedRect: face, cornerRadius: corner)
+        ctx.fill(facePath, with: .linearGradient(Gradient(colors: [spec.faceCenter, spec.faceEdge]),
+                                                 startPoint: CGPoint(x: face.midX, y: face.minY), endPoint: CGPoint(x: face.midX, y: face.maxY)))
+        ctx.drawLayer { layer in
+            layer.clip(to: facePath)
+            layer.addFilter(.blur(radius: side * 0.03))
+            var shade = Path(outer.insetBy(dx: -side, dy: -side))
+            shade.addPath(Path(roundedRect: face.insetBy(dx: side * 0.02, dy: side * 0.02).offsetBy(dx: 0, dy: side * 0.03),
+                               cornerRadius: corner))
+            layer.fill(shade, with: .color(.black.opacity(0.85)), style: FillStyle(eoFill: true))
+        }
+
+        // Track: 18 % of the face wide, from near the top to above the value.
+        let trackWidth = face.width * 0.18
+        let track = CGRect(x: face.midX - trackWidth / 2, y: face.minY + face.height * 0.08,
+                           width: trackWidth, height: face.height * 0.66)
+        func y(_ fraction: Double) -> CGFloat { track.maxY - track.height * fraction }
+        let shows = reading.number != nil
+        if finish == .race {
+            let count = 16, gap = track.height * 0.012
+            for index in 0..<count {
+                let from = Double(index) / Double(count), to = Double(index + 1) / Double(count), middle = (from + to) / 2
+                ctx.fill(Path(CGRect(x: track.minX, y: y(to) + gap / 2, width: track.width, height: y(from) - y(to) - gap)),
+                         with: .color(shows && middle <= at ? range.color(atFraction: middle) : GaugeLook.unlit))
+            }
+        } else {
+            ctx.fill(Path(track), with: .color(GaugeLook.unlit))
+            if shows {
+                ctx.fill(Path(CGRect(x: track.minX, y: y(at), width: track.width, height: track.maxY - y(at))),
+                         with: .linearGradient(range.gradient(), startPoint: CGPoint(x: track.midX, y: track.maxY),
+                                               endPoint: CGPoint(x: track.midX, y: track.minY)))
             }
         }
+
+        // Ticks right of the track; numbers only at both ends.
+        let gap = face.width * 0.045
+        let display = range.converted(for: reading.sensor, reading.units)
+        let scale = DialScale(min: display.min, max: display.max)
+        let span = display.max - display.min
+        if span > 0 {
+            for tick in scale.ticks {
+                let ty = y((tick.value - display.min) / span)
+                var path = Path()
+                path.move(to: CGPoint(x: track.maxX + gap, y: ty))
+                path.addLine(to: CGPoint(x: track.maxX + gap + face.width * (tick.isMajor ? 0.09 : 0.05), y: ty))
+                ctx.stroke(path, with: .color(spec.ink.opacity(tick.isMajor ? 1 : 0.6)), lineWidth: side * (tick.isMajor ? 0.014 : 0.007))
+            }
+        }
+        // Starting past the major ticks; a long one ("7000") shrinks so it stays inside the face.
+        let labelX = track.maxX + gap + face.width * 0.12
+        let room = face.maxX - labelX - face.width * 0.05
+        let ends = [(0.0, display.min), (1.0, display.max)]
+        var fontSize = face.width * 0.12
+        let widest = ends.map { ctx.resolve(endLabel($0.1).font(finish.font(fontSize))).measure(in: size).width }.max() ?? 0
+        if widest > room { fontSize *= room / widest }
+        for (fraction, label) in ends {
+            ctx.draw(endLabel(label).font(finish.font(fontSize)).foregroundStyle(spec.ink.opacity(0.7)),
+                     at: CGPoint(x: labelX, y: y(fraction)), anchor: .leading)
+        }
+
+        var dome = Path()
+        dome.move(to: CGPoint(x: face.minX + face.width * 0.15, y: face.minY + face.height * 0.06))
+        dome.addLine(to: CGPoint(x: face.minX + face.width * 0.15, y: face.minY + face.height * 0.3))
+        drawGlass(spec, clip: facePath, top: face.minY, middle: face.midY, in: &ctx, dome: dome, size: side)
     }
 }
 
 // MARK: - Arc
 
-/// Same colors as the bar, on an arc open at the bottom; the value in the center.
+/// A round pod in the slot's look: the scale is a thick arc that reveals the fixed gradient up to the value
+/// (race dash: LED blocks, each in the gradient's color at its place; unlit ones dark), min and max under its ends,
+/// the value in the center.
 struct ArcGauge: View {
     let reading: GaugeReading
+    let finish: GaugeFinish
 
     var body: some View {
         GaugeCell(reading: reading) {
-            // Only as tall as the arc's ends, so the name is the same distance below it as below the other styles.
-            Color.clear
-                .aspectRatio(1 / GaugeLook.arcHeight, contentMode: .fit)
-                .overlay(alignment: .top) {
-                    GeometryReader { geo in
-                        let d = geo.size.width
-                        let fraction = reading.number.map(reading.range.fraction) ?? 0
-                        ZStack {
-                            arc(0, 1).stroke(GaugeLook.trackColor, lineWidth: GaugeLook.track)
-                            arc(0, fraction)
-                                .stroke(AngularGradient(stops: reading.range.gradientStops, center: .center,
-                                                        startAngle: .degrees(GaugeLook.arcStart),
-                                                        endAngle: .degrees(GaugeLook.arcStart + GaugeLook.arcSweep)),
-                                        lineWidth: GaugeLook.track)
-                                .animation(GaugeLook.motion, value: reading.number)
-                            if reading.number != nil {
-                                // A soft round light on the fill's end, on the arc's center line.
-                                TipGlow(color: reading.tipColor)
-                                    .offset(x: d / 2 - GaugeLook.track / 2)
-                                    .frame(width: d, height: d)
-                                    .rotationEffect(.degrees(GaugeLook.arcStart + GaugeLook.arcSweep * fraction))
-                                    .animation(GaugeLook.motion, value: reading.number)
-                            }
-                            GaugeValue(reading: reading, size: d * 0.2).padding(.horizontal, GaugeLook.track * 2)
-                        }
-                        .frame(width: d, height: d)
-                    }
+            AnimatedCanvas(at: reading.range.fraction(reading.number ?? reading.range.min)) { context, size, at in
+                draw(&context, size, at: at)
+            }
+            .animation(GaugeLook.motion, value: reading.number)
+            .overlay {
+                GeometryReader { geo in
+                    let f = Dial(geo.size).r * (1 - finish.spec.bezel)
+                    GaugeValue(reading: reading, finish: finish, size: f * 0.4)
+                        .frame(width: f * 1.1)
+                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 }
+            }
+            .aspectRatio(1, contentMode: .fit)
         }
     }
 
-    private func arc(_ from: Double, _ to: Double) -> some Shape {
-        Circle()
-            .inset(by: GaugeLook.track / 2)
-            .trim(from: GaugeLook.arcSweep / 360 * from, to: GaugeLook.arcSweep / 360 * to)
-            .rotation(.degrees(GaugeLook.arcStart))
-    }
-}
+    private func draw(_ ctx: inout GraphicsContext, _ size: CGSize, at: Double) {
+        let spec = finish.spec, range = reading.range
+        let d = Dial(size)
+        let f = drawRoundHousing(spec, d, in: &ctx)
+        let track = f * 0.13, trackRadius = f * 0.68
+        let shows = reading.number != nil
 
-/// The subtle glow at the end of a bar or arc fill: a blurred round light in the gradient's own color.
-/// Round and soft, so the end of the fill stays clean (no lighter square).
-private struct TipGlow: View {
-    let color: Color
-    /// The fill's thickness.
-    var size: CGFloat = GaugeLook.track
+        if finish == .race {
+            let count = 26, gap = 0.012
+            for index in 0..<count {
+                let from = Double(index) / Double(count), to = Double(index + 1) / Double(count), middle = (from + to) / 2
+                ctx.stroke(d.arc(from + gap / 2, to - gap / 2, radius: trackRadius),
+                           with: .color(shows && middle <= at ? range.color(atFraction: middle) : GaugeLook.unlit), lineWidth: track)
+            }
+        } else {
+            ctx.stroke(d.arc(0, 1, radius: trackRadius), with: .color(GaugeLook.unlit), lineWidth: track)
+            if shows, at > 0 {
+                // The gradient turns with the scale: 260° of a 360° conic gradient, starting where the scale starts.
+                ctx.stroke(d.arc(0, at, radius: trackRadius),
+                           with: .conicGradient(range.gradient(length: GaugeLook.arcSweep / 360), center: d.center,
+                                                angle: .degrees(GaugeLook.arcStart)),
+                           lineWidth: track)
+            }
+        }
 
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: size * 1.2, height: size * 1.2)
-            .blur(radius: size * 0.45)
-            .opacity(0.6)
-            .allowsHitTesting(false)
+        let display = range.converted(for: reading.sensor, reading.units)
+        for (end, label) in [(0.0, display.min), (1.0, display.max)] {
+            let p = d.point(end, trackRadius)
+            ctx.draw(endLabel(label).font(finish.font(f * 0.12)).foregroundStyle(spec.ink.opacity(0.7)),
+                     at: CGPoint(x: p.x, y: p.y + f * 0.17))
+        }
+
+        drawRoundGlass(spec, d, face: f, in: &ctx)
     }
 }
 
 // MARK: - Gauges page
 
-/// One gauge drawn in the slot's style.
+/// One gauge drawn in the slot's style and look.
 struct StyledGauge: View {
     let style: GaugeStyle
+    let finish: GaugeFinish
     let reading: GaugeReading
 
     var body: some View {
         switch style {
-        case .analog: AnalogGauge(reading: reading)
-        case .digital: DigitalGauge(reading: reading)
-        case .bar: BarGauge(reading: reading)
-        case .arc: ArcGauge(reading: reading)
+        case .analog: AnalogGauge(reading: reading, finish: finish)
+        case .digital: DigitalGauge(reading: reading, finish: finish)
+        case .bar: BarGauge(reading: reading, finish: finish)
+        case .arc: ArcGauge(reading: reading, finish: finish)
         }
     }
 }

@@ -42,7 +42,7 @@ struct LiveGaugesView: View {
         let text = gaugeText(for: source.sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
         let reading = GaugeReading(sensor: source.sensor, text: text, value: value, range: scanner.range(for: source),
                                    units: unitSettings.units, name: source.name)
-        return StyledGauge(style: slot.style, reading: reading)
+        return StyledGauge(style: slot.style, finish: slot.look, reading: reading)
     }
 }
 

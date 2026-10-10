@@ -55,9 +55,36 @@ nonisolated enum GaugeStyle: String, Codable, CaseIterable {
     case analog = "Analog", digital = "Digital", bar = "Bar", arc = "Arc"
 }
 
+/// How a gauge is drawn on top of its style: A = factory instrument cluster, B = race dash, C = aftermarket pod gauge.
+/// Saved as "A", "B", "C".
+nonisolated enum GaugeFinish: String, Codable, CaseIterable {
+    case oem = "A", race = "B", aftermarket = "C"
+
+    var title: String {
+        switch self {
+        case .oem: "A · OEM"
+        case .race: "B · Race"
+        case .aftermarket: "C · Aftermarket"
+        }
+    }
+}
+
 nonisolated struct GaugeSlot: Codable, Equatable {
     var source: GaugeSource
     var style: GaugeStyle
+    var look: GaugeFinish = .oem
+}
+
+nonisolated extension GaugeSlot {
+    private enum CodingKeys: String, CodingKey { case source, style, look }
+
+    /// Layouts saved before the looks existed have no `look`: they open as A.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = try container.decode(GaugeSource.self, forKey: .source)
+        style = try container.decode(GaugeStyle.self, forKey: .style)
+        look = try container.decodeIfPresent(GaugeFinish.self, forKey: .look) ?? .oem
+    }
 }
 
 /// How many gauges are shown (1 to 6) and what each one shows, in what style.

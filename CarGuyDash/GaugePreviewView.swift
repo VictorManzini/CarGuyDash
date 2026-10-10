@@ -1,7 +1,7 @@
 #if DEBUG
 import SwiftUI
 
-/// Debug only: the four gauge styles side by side, to check the colors without the car.
+/// Debug only: the four gauge styles in each look (A, B, C), to check the colors without the car.
 /// Sensor and value are kept in UserDefaults, so launch arguments can set them for screenshots:
 /// `-openGaugePreview YES -gaugePreview.sensor 05 -gaugePreview.value 95 -gaugePreview.state "Stand By"`.
 struct GaugePreviewView: View {
@@ -19,11 +19,14 @@ struct GaugePreviewView: View {
         let reading = GaugeReading(sensor: sensor, text: text, value: value, range: range, units: unitSettings.units)
         ScrollView {
             VStack(spacing: GaugeLook.gapLarge) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: GaugeLook.gapLarge)], spacing: GaugeLook.gapLarge) {
-                    AnalogGauge(reading: reading).frame(height: 210)
-                    DigitalGauge(reading: reading).frame(height: 210)
-                    BarGauge(reading: reading).frame(height: 210)
-                    ArcGauge(reading: reading).frame(height: 210)
+                ForEach(GaugeFinish.allCases, id: \.self) { finish in
+                    VStack(alignment: .leading, spacing: GaugeLook.gap) {
+                        Text(finish.title).font(.headline)
+                        HStack(spacing: GaugeLook.gap) {
+                            ForEach(GaugeStyle.allCases, id: \.self) { StyledGauge(style: $0, finish: finish, reading: reading) }
+                        }
+                        .frame(height: 150)
+                    }
                 }
 
                 Picker("Sensor", selection: $sensor) {
