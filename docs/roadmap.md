@@ -25,6 +25,7 @@
 - [x] Gauge layout (1–6 slots, sensor + style each) and per-sensor ranges editable in Settings; polling follows the layout; Debug "Live gauges" shows it (untested in car)
 - [x] Boost gauge on the Dashboard (manifold − atmospheric)
 - [x] 🚗 Boost test: 0.01 bar engine off, −0.3 to −0.5 bar at idle, ~0.3 bar on a slope; speed unchanged with `0133` (130–139 per 10 s)
+- [x] Car profiles editable without the car: each car keeps its own gauge layout and ranges, Settings → Cars (add, edit, use, delete), link a new VIN to a car created by hand (untested in car)
 - [ ] All-sensors page (Car Scanner style)
 - [x] Settings: units (°C/°F, bar/psi/kPa, km/h/mph) — simple screen from the Dashboard gear button
 - [ ] Check the units on screen (can be done at home with the simulated adapter)
