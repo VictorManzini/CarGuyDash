@@ -1,37 +1,37 @@
 #if DEBUG
 import SwiftUI
 
-/// Debug only: the Dashboard's sensors with real values, drawn with the new gauge styles.
-/// Same data as the Dashboard (LiveData, `gaugeText`, the units from Settings); it does not touch polling.
+/// Debug only: the gauges of the saved layout (Settings → Gauges) with real values, each in its own style.
+/// Same data as the Dashboard (LiveData, `gaugeText`, the units from Settings).
 struct LiveGaugesView: View {
     let scanner: BluetoothScanner
-    @AppStorage("liveGauges.style") private var style = Style.analog
     @State private var ranges = GaugeRangeSettings()
     @State private var unitSettings = UnitSettings()
-
-    enum Style: String, CaseIterable {
-        case analog = "Analog", digital = "Digital", bar = "Bar", arc = "Arc"
-    }
 
     var body: some View {
         // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            ScrollView {
-                VStack(spacing: 16) {
-                    Picker("Style", selection: $style) {
-                        ForEach(Style.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented)
-                    Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
-                    gauge(.rpm).frame(height: 260)
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible())], spacing: 24) {
-                        ForEach(scanner.sensorsToPoll.filter { $0 != .rpm }, id: \.self) { sensor in
-                            gauge(sensor).frame(height: 200)
+            VStack(spacing: 8) {
+                Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
+                GeometryReader { geo in
+                    let slots = scanner.gaugeLayout.layout.visibleSlots
+                    let grid = Self.grid(for: slots.count, wide: geo.size.width > geo.size.height)
+                    VStack(spacing: 0) {
+                        ForEach(0..<grid.rows, id: \.self) { row in
+                            HStack(spacing: 0) {
+                                ForEach(0..<grid.columns, id: \.self) { column in
+                                    let index = row * grid.columns + column
+                                    Group {
+                                        if index < slots.count { gauge(slots[index]).padding(8) } else { Color.clear }
+                                    }
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }
+                            }
                         }
                     }
                 }
-                .padding()
             }
+            .padding(.horizontal)
         }
         .navigationTitle("Live gauges")
         .navigationBarTitleDisplayMode(.inline)
@@ -46,15 +46,25 @@ struct LiveGaugesView: View {
         }
     }
 
-    /// Same value and text as the Dashboard block; the manifold pressure shows the boost.
-    @ViewBuilder private func gauge(_ sensor: Sensor) -> some View {
-        let isBoost = sensor == .manifoldPressure
-        let value = isBoost ? scanner.liveData.boost : scanner.liveData.value(for: sensor)
-        let text = gaugeText(for: sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
-        let reading = GaugeReading(sensor: sensor, text: text, value: value,
-                                   range: ranges.range(for: isBoost ? .boost : .sensor(sensor)),
-                                   units: unitSettings.units, name: isBoost ? "Boost" : nil)
-        switch style {
+    /// Portrait: 1 = full screen, 2 = two rows, 3–4 = 2×2, 5–6 = two columns of three. Landscape swaps rows and columns.
+    static func grid(for count: Int, wide: Bool) -> (columns: Int, rows: Int) {
+        let portrait = switch count {
+        case ...1: (columns: 1, rows: 1)
+        case 2: (columns: 1, rows: 2)
+        case 3...4: (columns: 2, rows: 2)
+        default: (columns: 2, rows: 3)
+        }
+        return wide ? (portrait.rows, portrait.columns) : portrait
+    }
+
+    /// Same value and text as the Dashboard block; the Boost is manifold − atmospheric.
+    @ViewBuilder private func gauge(_ slot: GaugeSlot) -> some View {
+        let source = slot.source
+        let value = source == .boost ? scanner.liveData.boost : scanner.liveData.value(for: source.sensor)
+        let text = gaugeText(for: source.sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
+        let reading = GaugeReading(sensor: source.sensor, text: text, value: value, range: ranges.range(for: source),
+                                   units: unitSettings.units, name: source.name)
+        switch slot.style {
         case .analog: AnalogGauge(reading: reading)
         case .digital: DigitalGauge(reading: reading)
         case .bar: BarGauge(reading: reading)
