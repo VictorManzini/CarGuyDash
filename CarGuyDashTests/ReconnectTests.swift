@@ -18,12 +18,12 @@ struct ReconnectTests {
         let simulated = await scanner.useSimulatedAdapter()
         simulated.noDataChance = 0
         scanner.startPolling()
-        #expect(try await wait { BluetoothScanner.polledSensors.allSatisfy { scanner.liveData.value(for: $0) != nil } })
+        #expect(try await wait { scanner.sensorsToPoll.allSatisfy { scanner.liveData.value(for: $0) != nil } })
         return (scanner, simulated)
     }
 
     private func allNA(_ scanner: BluetoothScanner) -> Bool {
-        BluetoothScanner.polledSensors.allSatisfy { scanner.liveData.value(for: $0) == nil }
+        scanner.sensorsToPoll.allSatisfy { scanner.liveData.value(for: $0) == nil }
     }
 
     @Test func pollingResumesAfterADrop() async throws {

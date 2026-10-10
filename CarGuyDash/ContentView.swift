@@ -24,7 +24,7 @@ struct ContentView: View {
             // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                 VStack(alignment: .leading) {
-                    ForEach(BluetoothScanner.polledSensors, id: \.self) { sensor in
+                    ForEach(scanner.sensorsToPoll, id: \.self) { sensor in
                         Text("\(sensor.name): \(Self.text(scanner.liveData.value(for: sensor), sensor.unit))")
                     }
                 }

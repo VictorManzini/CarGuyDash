@@ -62,6 +62,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     let liveData = LiveData()
     /// The saved cars (only on this iPhone).
     let profiles: CarProfiles
+    /// The gauges the user picked; polling asks their sensors.
+    let gaugeLayout: GaugeLayoutSettings
     /// The car of the current connection; nil = no VIN or not named yet ("Unknown car").
     private(set) var car: CarProfile?
     /// VIN of the current connection; nil if the car did not answer. Never logged: the logs get pasted around.
@@ -111,6 +113,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         profiles = CarProfiles(defaults: defaults)
+        gaugeLayout = GaugeLayoutSettings(defaults: defaults)
         // A background relaunch (state restoration) starts here too, so ask instead of assuming "active".
         appPhase = UIApplication.shared.applicationState == .background ? .background : .active
         let formatter = DateFormatter()
@@ -122,6 +125,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         FileManager.default.createFile(atPath: logFileURL.path(), contents: nil)
         logFile = try? FileHandle(forWritingTo: logFileURL)
         super.init()
+        // A loop waiting because none of the old gauges could be asked looks at the new ones.
+        gaugeLayout.onChange = { [weak self] in self?.wakeStateWaiter() }
         // queue: nil delivers delegate callbacks on the main queue.
         // The restore identifier lets iOS relaunch the app in the background and hand the connection back (see `restore`).
         centralManager = CBCentralManager(

@@ -1,7 +1,12 @@
 import SwiftUI
 
-/// Gauges, numbers only: RPM on top, the other polled sensors in a 2-column grid.
+/// Gauges, numbers only: RPM on top, the other sensors in a 2-column grid.
 struct DashboardView: View {
+    /// The fixed list of this screen. Polling follows the gauge layout, so a sensor outside it shows "N/A" here.
+    private static let sensors: [Sensor] = [
+        .rpm, .oilTemp, .coolantTemp, .manifoldPressure, .intakeAirTemp, .throttlePosition, .moduleVoltage,
+    ]
+
     let scanner: BluetoothScanner
     let unitSettings: UnitSettings
     #if DEBUG
@@ -19,7 +24,7 @@ struct DashboardView: View {
                     Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
                     block(.rpm, valueSize: 96)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(BluetoothScanner.polledSensors.filter { $0 != .rpm }, id: \.self) { sensor in
+                        ForEach(Self.sensors.filter { $0 != .rpm }, id: \.self) { sensor in
                             block(sensor, valueSize: 56)
                         }
                     }

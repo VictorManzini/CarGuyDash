@@ -25,7 +25,7 @@ struct LiveGaugesView: View {
                     Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
                     gauge(.rpm).frame(height: 260)
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible())], spacing: 24) {
-                        ForEach(BluetoothScanner.polledSensors.filter { $0 != .rpm }, id: \.self) { sensor in
+                        ForEach(scanner.sensorsToPoll.filter { $0 != .rpm }, id: \.self) { sensor in
                             gauge(sensor).frame(height: 200)
                         }
                     }

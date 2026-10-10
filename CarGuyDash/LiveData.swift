@@ -46,16 +46,10 @@ final class LiveData {
 
 /// Polling: reads the sensors one after another, in a loop, until stopped.
 extension BluetoothScanner {
-    static let polledSensors: [Sensor] = [
-        .rpm, .oilTemp, .coolantTemp, .manifoldPressure, .intakeAirTemp, .throttlePosition, .moduleVoltage,
-    ]
-
-    /// What polling asks: the Dashboard sensors the car supports, or all of them if discovery failed.
-    /// A sensor the car lacks is never asked and stays "N/A".
-    var sensorsToPoll: [Sensor] {
-        guard let supportedPIDs else { return Self.polledSensors }
-        return Self.polledSensors.filter { supportedPIDs.contains(Int($0.rawValue, radix: 16) ?? -1) }
-    }
+    /// What polling asks: the sensors of the gauges in the layout that the car supports (all of them if discovery
+    /// failed); Boost asks the manifold pressure. Read again on every loop, so a layout change applies at once.
+    /// A sensor the car lacks or no gauge shows is never asked and stays "N/A".
+    var sensorsToPoll: [Sensor] { gaugeLayout.layout.sensorsToPoll(supported: supportedPIDs) }
 
     /// How often the atmospheric pressure (0133) is asked. Once at the start, then this often,
     /// so the other sensors do not slow down.
