@@ -1,25 +1,86 @@
 import SwiftUI
 
-/// Settings → Gauges: one car's gauge count (1 to 6) and, for each, the sensor and the style. Saved on every change.
+/// Settings → Gauges: one car's gauges drawn as on the gauges page, each with a fixed sample value (the middle of its normal range).
+/// Tapping a gauge opens a short sheet (sensor, style, remove); "+" adds one at the end. Saved on every change.
 struct GaugeLayoutEditor: View {
-    @Binding var layout: GaugeLayout
+    let units: Units
+    let profiles: CarProfiles
+    let carID: UUID
+    /// The gauge whose sheet is open. Debug: `-gaugeEditor.selected <index>` (0 = the first gauge) opens it at launch.
+    @State private var selected: Int? = {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "gaugeEditor.selected").flatMap { Int($0) }
+        #else
+        nil
+        #endif
+    }()
+
+    private static let sheetHeight: CGFloat = 280
 
     var body: some View {
-        Form {
-            Stepper("Gauges: \(layout.count)", value: $layout.count, in: 1...GaugeLayout.maxCount)
-            ForEach(layout.visibleSlots.indices, id: \.self) { index in
-                Section("Gauge \(index + 1)") {
-                    Picker("Sensor", selection: $layout.slots[index].source) {
-                        ForEach(GaugeSource.all, id: \.self) { Text($0.name) }
+        let layout = profiles.binding(carID, \.layout, fallback: .standard)
+        let count = layout.wrappedValue.count
+        GaugeGrid(count: count) { index in
+            Button { selected = index } label: {
+                gauge(layout.wrappedValue.slots[index])
+                    .padding(GaugeLook.gapSmall)
+                    .overlay {
+                        if selected == index {
+                            RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 2)
+                        }
                     }
-                    Picker("Style", selection: $layout.slots[index].style) {
-                        ForEach(GaugeStyle.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                }
+                    .contentShape(.rect)
             }
+            .buttonStyle(.plain)
         }
+        .padding(.horizontal)
         .navigationTitle("Gauges")
         .navigationBarTitleDisplayMode(.inline)
+        .background(.black)
+        .preferredColorScheme(.dark)
+        .toolbar {
+            if count < GaugeLayout.maxCount {
+                Button {
+                    layout.wrappedValue.count += 1
+                    selected = count // the new last gauge (count is the value before adding)
+                } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Add gauge")
+            }
+        }
+        .sheet(isPresented: Binding(get: { selected != nil }, set: { if !$0 { selected = nil } })) {
+            if let index = selected, index < count {
+                Form {
+                    Section("Gauge \(index + 1)") {
+                        Picker("Sensor", selection: layout.slots[index].source) {
+                            ForEach(GaugeSource.all, id: \.self) { Text($0.name) }
+                        }
+                        Picker("Style", selection: layout.slots[index].style) {
+                            ForEach(GaugeStyle.allCases, id: \.self) { Text($0.rawValue) }
+                        }
+                    }
+                    Section {
+                        Button("Remove gauge", role: .destructive) {
+                            layout.wrappedValue.remove(at: index)
+                            selected = nil
+                        }
+                        .disabled(count == 1)
+                    }
+                }
+                .presentationDetents([.height(Self.sheetHeight)])
+                // The grid stays usable above the sheet: tapping another gauge switches the sheet to it.
+                .presentationBackgroundInteraction(.enabled(upThrough: .height(Self.sheetHeight)))
+            }
+        }
+    }
+
+    /// The gauge with the middle of this car's normal range for its source (RPM 3000, coolant ~97 °C by default). No live data.
+    private func gauge(_ slot: GaugeSlot) -> some View {
+        let source = slot.source
+        let range = profiles.profile(id: carID)?.range(for: source) ?? .standard(for: source)
+        let value = (range.normalLow + range.normalHigh) / 2
+        let reading = GaugeReading(sensor: source.sensor, text: source.sensor.text(for: value, units: units), value: value,
+                                   range: range, units: units, name: source.name)
+        return StyledGauge(style: slot.style, reading: reading)
     }
 }
 

@@ -407,3 +407,46 @@ private struct TipGlow: View {
             .allowsHitTesting(false)
     }
 }
+
+// MARK: - Gauges page
+
+/// One gauge drawn in the slot's style.
+struct StyledGauge: View {
+    let style: GaugeStyle
+    let reading: GaugeReading
+
+    var body: some View {
+        switch style {
+        case .analog: AnalogGauge(reading: reading)
+        case .digital: DigitalGauge(reading: reading)
+        case .bar: BarGauge(reading: reading)
+        case .arc: ArcGauge(reading: reading)
+        }
+    }
+}
+
+/// The gauges page grid (`GaugeLayout.grid`), shared by Live gauges and the gauge editor so both place the gauges the same way.
+/// `cell` draws the gauge at an index from 0 to `count` − 1; an empty cell stays blank.
+struct GaugeGrid<Cell: View>: View {
+    let count: Int
+    @ViewBuilder let cell: (Int) -> Cell
+
+    var body: some View {
+        GeometryReader { geo in
+            let grid = GaugeLayout.grid(for: count, wide: geo.size.width > geo.size.height)
+            VStack(spacing: 0) {
+                ForEach(0..<grid.rows, id: \.self) { row in
+                    HStack(spacing: 0) {
+                        ForEach(0..<grid.columns, id: \.self) { column in
+                            let index = row * grid.columns + column
+                            Group {
+                                if index < count { cell(index).padding(GaugeLook.gap) } else { Color.clear }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

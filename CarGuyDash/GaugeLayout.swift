@@ -95,6 +95,26 @@ nonisolated struct GaugeLayout: Codable, Equatable {
     /// The slots on screen: the first `count`.
     var visibleSlots: [GaugeSlot] { Array(slots.prefix(count)) }
 
+    /// Hides one visible gauge; the ones after it move up one place. It becomes the first hidden slot,
+    /// so all six slots stay and adding a gauge right after brings it back. The last gauge cannot be removed.
+    mutating func remove(at index: Int) {
+        guard count > 1, slots.indices.contains(index), index < count else { return }
+        slots.insert(slots.remove(at: index), at: count - 1)
+        count -= 1
+    }
+
+    /// Rows and columns of the gauges page. Portrait: 1 = full screen, 2 = two rows, 3–4 = 2×2, 5–6 = two columns of three.
+    /// Landscape swaps rows and columns.
+    static func grid(for count: Int, wide: Bool) -> (columns: Int, rows: Int) {
+        let portrait = switch count {
+        case ...1: (columns: 1, rows: 1)
+        case 2: (columns: 1, rows: 2)
+        case 3...4: (columns: 2, rows: 2)
+        default: (columns: 2, rows: 3)
+        }
+        return wide ? (portrait.rows, portrait.columns) : portrait
+    }
+
     /// What polling asks: the sensors of the visible gauges, each once, in slot order (the boost asks 0B),
     /// without the ones the car lacks. `supported` nil = discovery failed: all of them.
     /// At most 6, since there are at most 6 gauges.

@@ -14,6 +14,8 @@ struct DashboardView: View {
     @State private var openGaugePreview = UserDefaults.standard.bool(forKey: "openGaugePreview")
     /// Simulator check: `-openLiveGauges YES` opens the live gauges directly.
     @State private var openLiveGauges = UserDefaults.standard.bool(forKey: "openLiveGauges")
+    /// Simulator check: `-openGaugeEditor YES` opens the active car's gauge editor (Settings → Cars → car → Gauges) directly.
+    @State private var openGaugeEditor = UserDefaults.standard.bool(forKey: "openGaugeEditor")
     #endif
 
     var body: some View {
@@ -39,6 +41,13 @@ struct DashboardView: View {
         #if DEBUG
         .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView(scanner: scanner) }
         .navigationDestination(isPresented: $openLiveGauges) { LiveGaugesView(scanner: scanner) }
+        .navigationDestination(isPresented: $openGaugeEditor) {
+            if let car = scanner.profiles.active {
+                GaugeLayoutEditor(units: unitSettings.units, profiles: scanner.profiles, carID: car.id)
+            } else {
+                ContentUnavailableView("No cars yet", systemImage: "car")
+            }
+        }
         #endif
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)

@@ -16,6 +16,23 @@ struct GaugeLayoutTests {
         #expect(GaugeLayout(slots: GaugeLayout.standard.slots, count: 99).count == 6)
     }
 
+    @Test func removingAGaugeKeepsTheOrderAndAllSixSlots() {
+        var layout = GaugeLayout.standard
+        layout.count = 4 // RPM, coolant, oil, Boost visible
+        layout.remove(at: 1)
+        #expect(layout.count == 3)
+        #expect(layout.visibleSlots.map(\.source) == [.sensor(.rpm), .sensor(.oilTemp), .boost])
+        #expect(layout.slots.count == 6)
+        layout.count += 1 // adding brings the removed one back at the end
+        #expect(layout.visibleSlots.last?.source == .sensor(.coolantTemp))
+
+        layout.count = 1
+        layout.remove(at: 0) // the last gauge stays
+        #expect(layout.count == 1)
+        layout.remove(at: 5) // a hidden slot is not removed
+        #expect(layout.count == 1)
+    }
+
     @Test func pollingAsksTheVisibleSensorsTheCarSupports() {
         var layout = GaugeLayout.standard
         // Default: RPM, coolant, oil, Boost (0B), intake air, module voltage.

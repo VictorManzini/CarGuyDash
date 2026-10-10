@@ -21,7 +21,7 @@ struct SettingsView: View {
             }
             Section {
                 if let car = profiles.active {
-                    NavigationLink("Gauges") { GaugeLayoutEditor(layout: profiles.binding(car.id, \.layout, fallback: .standard)) }
+                    NavigationLink("Gauges") { GaugeLayoutEditor(units: unitSettings.units, profiles: profiles, carID: car.id) }
                     NavigationLink("Sensor ranges") { SensorRangesView(units: unitSettings.units, profiles: profiles, carID: car.id) }
                 }
                 NavigationLink("Cars") { CarsView(scanner: scanner, units: unitSettings.units) }
@@ -94,7 +94,7 @@ struct CarDetailView: View {
                 LabeledContent("VIN", value: profiles.profile(id: carID)?.vinLabel ?? "")
             }
             Section {
-                NavigationLink("Gauges") { GaugeLayoutEditor(layout: profiles.binding(carID, \.layout, fallback: .standard)) }
+                NavigationLink("Gauges") { GaugeLayoutEditor(units: units, profiles: profiles, carID: carID) }
                 NavigationLink("Sensor ranges") { SensorRangesView(units: units, profiles: profiles, carID: carID) }
             }
             Section {
