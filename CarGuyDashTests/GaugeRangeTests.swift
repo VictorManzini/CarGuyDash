@@ -136,4 +136,28 @@ struct GaugeRangeTests {
         #expect(GaugeRangeSettings(defaults: defaults).range(for: .boost) == .standard(for: .boost))
         #expect(GaugeRange.standard(for: .boost) == GaugeRange(min: -101, max: 154, normalLow: -101, normalHigh: 154, redline: 154))
     }
+
+    @Test func dialNumbersSitOnRoundMajorTicks() {
+        func majors(_ scale: DialScale) -> [String] { scale.ticks.filter(\.isMajor).map { scale.label($0.value) } }
+        // RPM in thousands, step 1000.
+        let rpm = DialScale(min: 0, max: 7000)
+        #expect(rpm.step == 1000 && majors(rpm) == ["0", "1", "2", "3", "4", "5", "6", "7"])
+        // Oil −40…215 °C: step 50, numbers on its multiples only.
+        let oil = DialScale(min: -40, max: 215)
+        #expect(oil.step == 50 && majors(oil) == ["0", "50", "100", "150", "200"])
+        // Boost in bar −1.01…1.54: step 0.5, no float drift ("-0.5", not "-0.49999").
+        let boost = DialScale(min: -1.01, max: 1.54)
+        #expect(majors(boost) == ["-1", "-0.5", "0", "0.5", "1", "1.5"])
+        // Coolant 40…130 °C: step 20 (a 2), so four minor gaps per number.
+        let coolant = DialScale(min: 40, max: 130)
+        #expect(majors(coolant) == ["40", "60", "80", "100", "120"])
+        #expect(coolant.ticks.count == 19) // 40, 45, … 130
+        // Every step is 1, 2 or 5 × 10ⁿ, and at most 8 gaps between numbers.
+        for (low, high) in [(0.0, 65.535), (-40, 215), (104, 266), (0, 2.55), (0, 255), (-14.6, 22.3)] {
+            let scale = DialScale(min: low, max: high)
+            let mantissa = scale.step / pow(10, floor(log10(scale.step)))
+            #expect([1, 2, 5].contains { abs($0 - mantissa) < 1e-9 }, "\(low)…\(high)")
+            #expect((high - low) / scale.step <= 8 + 1e-9)
+        }
+    }
 }
