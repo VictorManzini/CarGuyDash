@@ -21,6 +21,7 @@
 - [x] Four gauge styles (analog, digital, vertical bar, arc) + per-sensor ranges + Debug "Gauge preview" (checked on the simulator)
 - [ ] Home page + gauges page (1 to 6 user-chosen gauges, portrait and landscape)
 - [ ] Gauge editing page (separate, to avoid taps while driving)
+- [x] Gauge layout (1–6 slots, sensor + style each) and per-sensor ranges editable in Settings; polling follows the layout; Debug "Live gauges" shows it (untested in car)
 - [x] Boost gauge on the Dashboard (manifold − atmospheric)
 - [x] 🚗 Boost test: 0.01 bar engine off, −0.3 to −0.5 bar at idle, ~0.3 bar on a slope; speed unchanged with `0133` (130–139 per 10 s)
 - [ ] All-sensors page (Car Scanner style)
