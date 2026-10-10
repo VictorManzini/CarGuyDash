@@ -1,11 +1,10 @@
 #if DEBUG
 import SwiftUI
 
-/// Debug only: the gauges of the saved layout (Settings → Gauges) with real values, each in its own style.
+/// Debug only: the gauges of the active car's layout (Settings → Gauges) with real values, each in its own style.
 /// Same data as the Dashboard (LiveData, `gaugeText`, the units from Settings).
 struct LiveGaugesView: View {
     let scanner: BluetoothScanner
-    @State private var ranges = GaugeRangeSettings()
     @State private var unitSettings = UnitSettings()
 
     var body: some View {
@@ -14,7 +13,7 @@ struct LiveGaugesView: View {
             VStack(spacing: GaugeLook.gap) {
                 Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
                 GeometryReader { geo in
-                    let slots = scanner.gaugeLayout.layout.visibleSlots
+                    let slots = scanner.layout.visibleSlots
                     let grid = Self.grid(for: slots.count, wide: geo.size.width > geo.size.height)
                     VStack(spacing: 0) {
                         ForEach(0..<grid.rows, id: \.self) { row in
@@ -62,7 +61,7 @@ struct LiveGaugesView: View {
         let source = slot.source
         let value = source == .boost ? scanner.liveData.boost : scanner.liveData.value(for: source.sensor)
         let text = gaugeText(for: source.sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
-        let reading = GaugeReading(sensor: source.sensor, text: text, value: value, range: ranges.range(for: source),
+        let reading = GaugeReading(sensor: source.sensor, text: text, value: value, range: scanner.range(for: source),
                                    units: unitSettings.units, name: source.name)
         switch slot.style {
         case .analog: AnalogGauge(reading: reading)

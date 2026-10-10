@@ -43,7 +43,7 @@ struct SupportedSensorsTests {
         let (scanner, simulated) = await connect()
         // The second ECU also answers (with zeros); only the engine ECU counts.
         #expect(scanner.supportedPIDs == SupportedPIDsTests.docList)
-        #expect(scanner.sensorsToPoll == scanner.gaugeLayout.layout.sensorsToPoll(supported: nil)) // the car has them all
+        #expect(scanner.sensorsToPoll == scanner.layout.sensorsToPoll(supported: nil)) // the car has them all
         // Blocks asked in order, once each, and no further than the last bit allows.
         let asked = simulated.received.filter { ["0100\r", "0120\r", "0140\r", "0160\r", "0180\r"].contains($0) }
         #expect(asked == ["0100\r", "0120\r", "0140\r", "0160\r"])
@@ -54,7 +54,7 @@ struct SupportedSensorsTests {
         simulated.answersSupportedPIDs = false
         try await reconnect(scanner) // ready, not stuck
         #expect(scanner.supportedPIDs == nil)
-        #expect(scanner.sensorsToPoll == scanner.gaugeLayout.layout.sensorsToPoll(supported: nil))
+        #expect(scanner.sensorsToPoll == scanner.layout.sensorsToPoll(supported: nil))
 
         try await pollOneCycle(scanner)
         #expect(lastValue(scanner, .oilTemp) == 67)
@@ -100,13 +100,17 @@ struct SupportedSensorsTests {
         let (scanner, simulated) = await connect()
         simulated.supportMasks["40"] = [0xFE, 0xD0, 0x84, 0x01] // no oil (5C)
         try await reconnect(scanner)
-        scanner.gaugeLayout.layout.count = 1
-        scanner.gaugeLayout.layout.slots[0].source = .sensor(.oilTemp)
+        scanner.saveCar(make: "BMW", model: "M135i")
+        let car = try #require(scanner.car?.id)
+        scanner.profiles.update(car) {
+            $0.layout.count = 1
+            $0.layout.slots[0].source = .sensor(.oilTemp)
+        }
         #expect(scanner.sensorsToPoll.isEmpty)
         scanner.startPolling()
         try await Task.sleep(for: .milliseconds(300)) // waiting: nothing to ask
 
-        scanner.gaugeLayout.layout.slots[0].source = .sensor(.rpm)
+        scanner.profiles.update(car) { $0.layout.slots[0].source = .sensor(.rpm) }
         let start = ContinuousClock.now
         while !simulated.received.contains("010C\r") && ContinuousClock.now - start < .seconds(3) {
             try await Task.sleep(for: .milliseconds(20))

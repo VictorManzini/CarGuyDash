@@ -37,7 +37,7 @@ struct ContentView: View {
                 .disabled(scanner.state != .searching && scanner.state != .bluetoothOff)
             Button("Simulate disconnect") { scanner.simulateDisconnect() }
                 .disabled(scanner.simulator == nil || !scanner.isReady)
-            NavigationLink("Gauge preview") { GaugePreviewView() }
+            NavigationLink("Gauge preview") { GaugePreviewView(scanner: scanner) }
             NavigationLink("Live gauges") { LiveGaugesView(scanner: scanner) }
             #endif
 

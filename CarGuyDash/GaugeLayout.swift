@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 
 /// What one gauge shows: a sensor, or the boost (manifold − atmospheric), which is read from the manifold pressure (0B).
 /// Raw value = the sensor's PID, or "boost": saved in the layout and used as the key of the saved range.
@@ -106,24 +105,5 @@ nonisolated struct GaugeLayout: Codable, Equatable {
         }
         guard let supported else { return sensors }
         return sensors.filter { supported.contains(Int($0.rawValue, radix: 16) ?? -1) }
-    }
-}
-
-/// The layout the user picked, saved on the iPhone (UserDefaults, as JSON).
-@Observable final class GaugeLayoutSettings {
-    var layout: GaugeLayout {
-        didSet {
-            defaults.set(try? JSONEncoder().encode(layout), forKey: "gauge.layout")
-            onChange?()
-        }
-    }
-    /// Called after every change; the scanner uses it to wake a polling loop that had nothing to ask.
-    @ObservationIgnored var onChange: (() -> Void)?
-    @ObservationIgnored private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        layout = defaults.data(forKey: "gauge.layout")
-            .flatMap { try? JSONDecoder().decode(GaugeLayout.self, from: $0) } ?? .standard
     }
 }

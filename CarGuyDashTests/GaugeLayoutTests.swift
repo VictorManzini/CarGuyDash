@@ -39,21 +39,24 @@ struct GaugeLayoutTests {
         #expect(GaugeSource.all.count == Sensor.allCases.count + 1)
     }
 
-    @Test func theLayoutIsSavedAndLoadedAgain() throws {
+    @MainActor @Test func aCarsLayoutIsSavedAndLoadedAgain() throws {
         let suite = "GaugeLayoutTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        #expect(GaugeLayoutSettings(defaults: defaults).layout == .standard)
-        let settings = GaugeLayoutSettings(defaults: defaults)
-        settings.layout.count = 4
-        settings.layout.slots[1] = GaugeSlot(source: .sensor(.speed), style: .digital)
-        settings.layout.slots[3] = GaugeSlot(source: .boost, style: .bar)
+        let profiles = CarProfiles(defaults: defaults)
+        let car = try #require(profiles.add(make: "BMW", model: "M135i"))
+        #expect(car.layout == .standard) // a new car starts with the default layout
+        profiles.update(car.id) {
+            $0.layout.count = 4
+            $0.layout.slots[1] = GaugeSlot(source: .sensor(.speed), style: .digital)
+            $0.layout.slots[3] = GaugeSlot(source: .boost, style: .bar)
+        }
         // A new object reading the same storage = the app opened again.
-        let reopened = GaugeLayoutSettings(defaults: defaults).layout
+        let reopened = try #require(CarProfiles(defaults: defaults).profile(id: car.id)?.layout)
         #expect(reopened.count == 4)
         #expect(reopened.slots[1] == GaugeSlot(source: .sensor(.speed), style: .digital))
         #expect(reopened.slots[3] == GaugeSlot(source: .boost, style: .bar))
-        #expect(reopened == settings.layout)
+        #expect(reopened == profiles.profile(id: car.id)?.layout)
     }
 }

@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 
 /// Color zones along a gauge's scale.
 nonisolated enum GaugeColor: Equatable {
@@ -101,42 +100,5 @@ nonisolated struct GaugeRange: Codable, Equatable {
     func convertedBack(for sensor: Sensor, _ units: Units) -> GaugeRange {
         let c = { sensor.internalValue($0, units) }
         return GaugeRange(min: c(min), max: c(max), normalLow: c(normalLow), normalHigh: c(normalHigh), redline: c(redline))
-    }
-}
-
-/// Ranges the user changed, saved on the iPhone (UserDefaults, as JSON). Any other one uses `standard(for:)`.
-@Observable final class GaugeRangeSettings {
-    /// Key = the source's raw value (sensor PID, or "boost").
-    private(set) var saved: [String: GaugeRange]
-    @ObservationIgnored private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        saved = defaults.data(forKey: "gauge.ranges")
-            .flatMap { try? JSONDecoder().decode([String: GaugeRange].self, from: $0) } ?? [:]
-    }
-
-    func range(for source: GaugeSource) -> GaugeRange {
-        saved[source.rawValue] ?? .standard(for: source)
-    }
-
-    func set(_ range: GaugeRange, for source: GaugeSource) {
-        saved[source.rawValue] = range
-        defaults.set(try? JSONEncoder().encode(saved), forKey: "gauge.ranges")
-    }
-
-    /// Saves a range typed in the chosen units, converted to the internal unit.
-    /// Returns why it was not saved (see `GaugeRange.problem`), or nil when it was.
-    @discardableResult
-    func save(typed: GaugeRange, for source: GaugeSource, units: Units) -> String? {
-        if let problem = typed.problem { return problem }
-        set(typed.convertedBack(for: source.sensor, units), for: source)
-        return nil
-    }
-
-    /// Back to `standard(for:)`.
-    func reset(_ source: GaugeSource) {
-        saved[source.rawValue] = nil
-        defaults.set(try? JSONEncoder().encode(saved), forKey: "gauge.ranges")
     }
 }

@@ -37,7 +37,7 @@ struct DashboardView: View {
             CarInfoView(scanner: scanner)
         }
         #if DEBUG
-        .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView() }
+        .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView(scanner: scanner) }
         .navigationDestination(isPresented: $openLiveGauges) { LiveGaugesView(scanner: scanner) }
         #endif
         .navigationTitle("Dashboard")
@@ -52,7 +52,7 @@ struct DashboardView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink("Tests") { ContentView(scanner: scanner) }
-                NavigationLink { SettingsView(unitSettings: unitSettings, gaugeLayout: scanner.gaugeLayout) } label: { Image(systemName: "gearshape") }
+                NavigationLink { SettingsView(unitSettings: unitSettings, scanner: scanner) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
             }
         }

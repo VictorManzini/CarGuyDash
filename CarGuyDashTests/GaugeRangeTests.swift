@@ -76,16 +76,17 @@ struct GaugeRangeTests {
         #expect(rpm.converted(for: .rpm, Units(temperature: .fahrenheit, pressure: .psi, speed: .mph)) == rpm)
     }
 
-    @Test func aChangedRangeIsSavedAndLoadedAgain() throws {
+    @MainActor @Test func aChangedRangeIsSavedAndLoadedAgain() throws {
         let suite = "GaugeRangeTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        #expect(GaugeRangeSettings(defaults: defaults).range(for: .sensor(.rpm)) == .standard(for: .rpm))
+        let car = try #require(CarProfiles(defaults: defaults).add(make: "BMW", model: "M135i"))
+        #expect(car.range(for: .sensor(.rpm)) == .standard(for: .rpm))
         let custom = GaugeRange(min: 0, max: 8000, normalLow: 0, normalHigh: 6500, redline: 7000)
-        GaugeRangeSettings(defaults: defaults).set(custom, for: .sensor(.rpm))
+        CarProfiles(defaults: defaults).update(car.id) { $0.ranges["0C"] = custom }
         // A new object reading the same storage = the app opened again.
-        let reopened = GaugeRangeSettings(defaults: defaults)
+        let reopened = try #require(CarProfiles(defaults: defaults).profile(id: car.id))
         #expect(reopened.range(for: .sensor(.rpm)) == custom)
         #expect(reopened.range(for: .sensor(.coolantTemp)) == .standard(for: .coolantTemp))
     }
@@ -107,33 +108,30 @@ struct GaugeRangeTests {
         #expect(bad.problem == "Redline can't be above max.")
     }
 
-    @Test func aTypedRangeIsSavedInTheInternalUnitOnlyWhenValid() throws {
-        let suite = "GaugeRangeTests-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let settings = GaugeRangeSettings(defaults: defaults)
+    @Test func aTypedRangeIsSavedInTheInternalUnitOnlyWhenValid() {
+        var car = CarProfile(make: "BMW", model: "M135i")
 
         // Coolant typed in °F comes back in °C.
         let fahrenheit = Units(temperature: .fahrenheit)
         let typed = GaugeRange(min: 104, max: 266, normalLow: 194, normalHigh: 221, redline: 248)
-        #expect(settings.save(typed: typed, for: .sensor(.coolantTemp), units: fahrenheit) == nil)
-        let saved = GaugeRangeSettings(defaults: defaults).range(for: .sensor(.coolantTemp))
+        #expect(car.saveRange(typed: typed, for: .sensor(.coolantTemp), units: fahrenheit) == nil)
+        let saved = car.range(for: .sensor(.coolantTemp))
         #expect(abs(saved.min - 40) < 1e-9 && abs(saved.max - 130) < 1e-9 && abs(saved.redline - 120) < 1e-9)
         #expect(abs(saved.normalLow - 90) < 1e-9 && abs(saved.normalHigh - 105) < 1e-9)
 
         // Boost typed in bar comes back in kPa.
         let boost = GaugeRange(min: -1, max: 1.5, normalLow: -1, normalHigh: 1, redline: 1.25)
-        #expect(settings.save(typed: boost, for: .boost, units: Units(pressure: .bar)) == nil)
-        #expect(settings.range(for: .boost) == GaugeRange(min: -100, max: 150, normalLow: -100, normalHigh: 100, redline: 125))
+        #expect(car.saveRange(typed: boost, for: .boost, units: Units(pressure: .bar)) == nil)
+        #expect(car.range(for: .boost) == GaugeRange(min: -100, max: 150, normalLow: -100, normalHigh: 100, redline: 125))
 
         // An invalid one is not saved: the old one stays.
         var wrong = boost; wrong.redline = 2
-        #expect(settings.save(typed: wrong, for: .boost, units: Units(pressure: .bar)) == "Redline can't be above max.")
-        #expect(settings.range(for: .boost).redline == 125)
+        #expect(car.saveRange(typed: wrong, for: .boost, units: Units(pressure: .bar)) == "Redline can't be above max.")
+        #expect(car.range(for: .boost).redline == 125)
 
-        // Reset brings the default back, also after reopening.
-        settings.reset(.boost)
-        #expect(GaugeRangeSettings(defaults: defaults).range(for: .boost) == .standard(for: .boost))
+        // Reset brings the default back.
+        car.resetRange(.boost)
+        #expect(car.range(for: .boost) == .standard(for: .boost))
         #expect(GaugeRange.standard(for: .boost) == GaugeRange(min: -101, max: 154, normalLow: -101, normalHigh: 154, redline: 154))
     }
 
