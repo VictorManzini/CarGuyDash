@@ -68,4 +68,19 @@ extension Sensor {
         default: value
         }
     }
+
+    /// The opposite of `displayValue`: a value typed in the chosen unit, back in °C, kPa or km/h.
+    func internalValue(_ value: Double, _ units: Units) -> Double {
+        switch unit {
+        case "°C": units.temperature == .fahrenheit ? (value - 32) * 5 / 9 : value
+        case "kPa":
+            switch units.pressure {
+            case .bar: value * 100
+            case .psi: value / 0.145038
+            case .kPa: value
+            }
+        case "km/h": units.speed == .mph ? value / 0.621371 : value
+        default: value
+        }
+    }
 }

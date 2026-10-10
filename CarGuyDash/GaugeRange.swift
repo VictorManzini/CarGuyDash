@@ -40,6 +40,26 @@ nonisolated struct GaugeRange: Codable, Equatable {
         }
     }
 
+    /// The boost: the manifold's formula range (0–255 kPa) moved down by one atmosphere.
+    // ponytail: fixed 101 kPa shift; the real atmosphere varies a few kPa, fine for a dial scale.
+    static func standard(for source: GaugeSource) -> GaugeRange {
+        switch source {
+        case .sensor(let sensor): standard(for: sensor)
+        case .boost: GaugeRange(min: -101, max: 154, normalLow: -101, normalHigh: 154, redline: 154)
+        }
+    }
+
+    /// Why this range cannot be saved, or nil when it can: min ≤ normalLow ≤ normalHigh ≤ redline ≤ max, and min < max.
+    /// Equal neighbours are allowed: normalLow = min means no blue (RPM), normalHigh = redline = max means no orange or red.
+    var problem: String? {
+        if min >= max { return "Min must be below max." }
+        if normalLow < min { return "Normal low can't be below min." }
+        if normalHigh < normalLow { return "Normal high can't be below normal low." }
+        if redline < normalHigh { return "Redline can't be below normal high." }
+        if redline > max { return "Redline can't be above max." }
+        return nil
+    }
+
     /// Where `value` sits on the scale: 0 = min, 1 = max, clamped.
     func fraction(_ value: Double) -> Double {
         guard max > min else { return 0 }
@@ -76,11 +96,17 @@ nonisolated struct GaugeRange: Codable, Equatable {
         let c = { sensor.displayValue($0, units) }
         return GaugeRange(min: c(min), max: c(max), normalLow: c(normalLow), normalHigh: c(normalHigh), redline: c(redline))
     }
+
+    /// The opposite of `converted`: a range typed in the chosen units, back in the internal unit.
+    func convertedBack(for sensor: Sensor, _ units: Units) -> GaugeRange {
+        let c = { sensor.internalValue($0, units) }
+        return GaugeRange(min: c(min), max: c(max), normalLow: c(normalLow), normalHigh: c(normalHigh), redline: c(redline))
+    }
 }
 
-/// Ranges the user changed, saved on the iPhone (UserDefaults, as JSON). Any other sensor uses `standard(for:)`.
+/// Ranges the user changed, saved on the iPhone (UserDefaults, as JSON). Any other one uses `standard(for:)`.
 @Observable final class GaugeRangeSettings {
-    /// Key = sensor PID.
+    /// Key = the source's raw value (sensor PID, or "boost").
     private(set) var saved: [String: GaugeRange]
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -90,12 +116,27 @@ nonisolated struct GaugeRange: Codable, Equatable {
             .flatMap { try? JSONDecoder().decode([String: GaugeRange].self, from: $0) } ?? [:]
     }
 
-    func range(for sensor: Sensor) -> GaugeRange {
-        saved[sensor.rawValue] ?? .standard(for: sensor)
+    func range(for source: GaugeSource) -> GaugeRange {
+        saved[source.rawValue] ?? .standard(for: source)
     }
 
-    func set(_ range: GaugeRange, for sensor: Sensor) {
-        saved[sensor.rawValue] = range
+    func set(_ range: GaugeRange, for source: GaugeSource) {
+        saved[source.rawValue] = range
+        defaults.set(try? JSONEncoder().encode(saved), forKey: "gauge.ranges")
+    }
+
+    /// Saves a range typed in the chosen units, converted to the internal unit.
+    /// Returns why it was not saved (see `GaugeRange.problem`), or nil when it was.
+    @discardableResult
+    func save(typed: GaugeRange, for source: GaugeSource, units: Units) -> String? {
+        if let problem = typed.problem { return problem }
+        set(typed.convertedBack(for: source.sensor, units), for: source)
+        return nil
+    }
+
+    /// Back to `standard(for:)`.
+    func reset(_ source: GaugeSource) {
+        saved[source.rawValue] = nil
         defaults.set(try? JSONEncoder().encode(saved), forKey: "gauge.ranges")
     }
 }

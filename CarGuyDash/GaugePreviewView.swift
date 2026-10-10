@@ -13,7 +13,7 @@ struct GaugePreviewView: View {
     @State private var unitSettings = UnitSettings()
 
     var body: some View {
-        let range = ranges.range(for: sensor)
+        let range = ranges.range(for: .sensor(sensor))
         let text = state.isEmpty ? sensor.text(for: value, units: unitSettings.units) : state
         let reading = GaugeReading(sensor: sensor, text: text, value: value, range: range, units: unitSettings.units)
         ScrollView {
@@ -38,7 +38,7 @@ struct GaugePreviewView: View {
             }
             .padding()
         }
-        .onChange(of: sensor) { value = ranges.range(for: sensor).min }
+        .onChange(of: sensor) { value = ranges.range(for: .sensor(sensor)).min }
         .navigationTitle("Gauge preview")
         .navigationBarTitleDisplayMode(.inline)
         .background(.black)

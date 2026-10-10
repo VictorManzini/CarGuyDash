@@ -13,10 +13,6 @@ struct LiveGaugesView: View {
         case analog = "Analog", digital = "Digital", bar = "Bar", arc = "Arc"
     }
 
-    /// Boost = manifold − atmospheric: the manifold's formula range (0–255 kPa) moved down by one atmosphere.
-    // ponytail: fixed 101 kPa shift; the real atmosphere varies a few kPa, fine for a dial scale.
-    private static let boostRange = GaugeRange(min: -101, max: 154, normalLow: -101, normalHigh: 154, redline: 154)
-
     var body: some View {
         // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
@@ -56,7 +52,7 @@ struct LiveGaugesView: View {
         let value = isBoost ? scanner.liveData.boost : scanner.liveData.value(for: sensor)
         let text = gaugeText(for: sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
         let reading = GaugeReading(sensor: sensor, text: text, value: value,
-                                   range: isBoost ? Self.boostRange : ranges.range(for: sensor),
+                                   range: ranges.range(for: isBoost ? .boost : .sensor(sensor)),
                                    units: unitSettings.units, name: isBoost ? "Boost" : nil)
         switch style {
         case .analog: AnalogGauge(reading: reading)
