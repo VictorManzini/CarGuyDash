@@ -19,6 +19,7 @@
 ## Phase 3 — iPhone screens
 - [ ] Visual prototype of the screens (only when the owner asks)
 - [x] Four gauge styles (analog, digital, vertical bar, arc) + per-sensor ranges + Debug "Gauge preview" (checked on the simulator)
+- [x] Gauge visual polish: one family look, analog numbers on round 1-2-5 steps, metallic rim, clean arc tip (checked on the simulator)
 - [ ] Home page + gauges page (1 to 6 user-chosen gauges, portrait and landscape)
 - [ ] Gauge editing page (separate, to avoid taps while driving)
 - [x] Gauge layout (1–6 slots, sensor + style each) and per-sensor ranges editable in Settings; polling follows the layout; Debug "Live gauges" shows it (untested in car)
