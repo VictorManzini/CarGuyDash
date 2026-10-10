@@ -21,7 +21,8 @@ struct GaugeLayoutEditor: View {
         let layout = profiles.binding(carID, \.layout, fallback: .standard)
         let count = layout.wrappedValue.count
         GaugeGrid(count: count) { index in
-            Button { selected = index } label: {
+            // Tapping the gauge whose sheet is open closes it; another gauge switches the sheet to that one.
+            Button { selected = selected == index ? nil : index } label: {
                 gauge(layout.wrappedValue.slots[index])
                     .padding(GaugeLook.gapSmall)
                     .overlay {
@@ -34,6 +35,10 @@ struct GaugeLayoutEditor: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal)
+        // The sheet lets taps through to the grid, so iOS no longer closes it on an outside tap: an empty area does it here.
+        // The gauge buttons take their own taps first.
+        .contentShape(.rect)
+        .onTapGesture { selected = nil }
         .navigationTitle("Gauges")
         .navigationBarTitleDisplayMode(.inline)
         .background(.black)
