@@ -1,7 +1,8 @@
 import Foundation
 
 /// Pretends to be the ELM327 in the car, so the app can be developed without it.
-/// Answers like the car did with headers on (ATH1, spaces off): engine ECU (7E8) and a second ECU (7E9).
+/// Answers like the car did with headers on (ATH1, spaces off): engine ECU (7E8) and a second ECU (7E9);
+/// after ATSH7E0 only the engine ECU answers.
 /// Like the real link, it only receives lines that already passed the gatekeeper.
 final class SimulatedAdapter: AdapterLink {
     /// Every line received, so tests can check what got here.
@@ -14,6 +15,10 @@ final class SimulatedAdapter: AdapterLink {
     var answersVIN = true
     /// False: the support blocks (0100, 0120...) answer "NO DATA", like a car that fails to list its PIDs.
     var answersSupportedPIDs = true
+    /// AT commands answered with "?", like an adapter that does not know them.
+    var rejectedCommands: Set<String> = []
+    /// True after ATSH7E0 (until ATZ): requests go to the engine ECU only, so the second ECU no longer answers.
+    private var engineOnly = false
     /// "Supported PIDs" masks of the engine ECU (7E8), from the in-car log (no personal data).
     /// A test can change one to make the car lack a sensor.
     var supportMasks: [String: [UInt8]] = [
@@ -55,21 +60,28 @@ final class SimulatedAdapter: AdapterLink {
 
     private func answer(to command: String) -> String {
         switch command {
-        case "ATZ", "ATI": return "ELM327 v2.3"
+        case _ where rejectedCommands.contains(command): return "?"
+        case "ATZ", "ATI":
+            engineOnly = false
+            return "ELM327 v2.3"
         case "ATRV": return "12.4V"
+        case Gatekeeper.engineHeader:
+            engineOnly = true
+            return "OK"
         case _ where command.hasPrefix("AT"): return "OK"
         case "0902": return answersVIN ? vinResponse() : "NO DATA"
         default: break
         }
-        let pid = String(command.dropFirst(2))
+        // "010C" or, with a response count, "010C1".
+        let pid = String(command.dropFirst(2).prefix(2))
         // The support blocks always answer (never "NO DATA" by chance). The second ECU answers 0100–0140 too, with zeros.
         if command.hasPrefix("01"), let mask = supportMasks[pid] {
-            return answersSupportedPIDs ? reply(pid: pid, data: mask, secondECU: pid != "60") : "NO DATA"
+            return answersSupportedPIDs ? reply(pid: pid, data: mask, secondECU: !engineOnly && pid != "60") : "NO DATA"
         }
         guard command.hasPrefix("01"), !silentPIDs.contains(pid), let bytes = bytes(for: pid), Double.random(in: 0..<1) >= noDataChance else {
             return "NO DATA"
         }
-        return reply(pid: pid, data: bytes, secondECU: true)
+        return reply(pid: pid, data: bytes, secondECU: !engineOnly)
     }
 
     /// The lines of a positive answer. The second ECU answers first with zeros,

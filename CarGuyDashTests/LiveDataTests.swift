@@ -62,7 +62,7 @@ struct LiveDataTests {
 
     @Test func noDataLeavesEverySensorNA() async throws {
         // Wait until the last sensor of the cycle was asked for.
-        let scanner = try await poll(noDataChance: 1) { _, simulated in simulated.received.contains("0142\r") }
+        let scanner = try await poll(noDataChance: 1) { _, simulated in simulated.received.contains("01421\r") }
         for sensor in scanner.sensorsToPoll {
             #expect(scanner.liveData.value(for: sensor) == nil, "\(sensor)")
         }

@@ -70,7 +70,7 @@ extension BluetoothScanner {
         guard supportedPIDs?.contains(0x33) ?? true,
               baroAskedAt.map({ now.timeIntervalSince($0) >= Self.barometricEvery }) ?? true else { return }
         baroAskedAt = now
-        let result = await run("01" + Sensor.barometricPressure.rawValue, timeout: .seconds(1))
+        let result = await run(request(.barometricPressure), timeout: .seconds(1))
         liveData.record(result.flatMap { Sensor.barometricPressure.value(from: $0.response) }, for: .barometricPressure)
     }
 
@@ -106,7 +106,7 @@ extension BluetoothScanner {
                 await pollBarometricPressureIfDue()
                 for sensor in Self.pollOrder(sensors) where !Task.isCancelled && isReady {
                     // Short timeout: a sensor that does not answer must not hold up the others.
-                    let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
+                    let result = await run(request(sensor), timeout: .seconds(1))
                     let value = result.flatMap { sensor.value(from: $0.response) }
                     if let result { meter.time(result.ms) }
                     if value != nil { meter.record(sensor) }

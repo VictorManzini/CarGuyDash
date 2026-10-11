@@ -80,6 +80,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// PIDs the engine ECU supports, discovered on every connection (not saved).
     /// Nil: discovery failed or not done yet, so polling uses the fixed list.
     private(set) var supportedPIDs: Set<Int>?
+    /// True when the adapter accepted ATSH7E0 on this connection: only the engine ECU answers, so polling adds the response count.
+    @ObservationIgnored private(set) var engineOnly = false
     /// When the atmospheric pressure was last asked; nil = ask on the next loop. See `pollBarometricPressureIfDue`.
     @ObservationIgnored var baroAskedAt: Date?
     /// The running polling loop; nil when stopped.
@@ -351,13 +353,15 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// then marks it ready. Both come before "ready" so they never compete with the polling loop for the adapter.
     /// Polling, if on, picks up again by itself once the state is ready.
     private func prepare() async {
+        engineOnly = false // ATZ forgets the header
         for command in Self.setupCommands {
             _ = await run(command)
             guard link != nil else { return } // dropped again during setup
         }
         await readVIN()
         await discoverSupportedPIDs()
-        guard link != nil else { return } // dropped again while reading the VIN or the PIDs
+        await addressEngineOnly()
+        guard link != nil else { return } // dropped again while reading the VIN, the PIDs or setting the header
         state = .ready
         addLog("Ready")
     }
@@ -400,6 +404,23 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         supportedPIDs = found
         addLog("Supported PIDs: \(found.count) found")
     }
+
+    /// Fewer waits while polling: ATAT2 (shorter adaptive timing) and ATSH7E0 (requests go to the engine ECU only,
+    /// so the second ECU stops answering). Adapter settings only, nothing is written to the car. Sent after the PID
+    /// discovery, so the protocol search and the VIN keep the usual broadcast. A command the adapter rejects ("?")
+    /// is logged and skipped; without ATSH7E0 the polling requests stay as before (no response count).
+    private func addressEngineOnly() async {
+        for command in ["ATAT2", Gatekeeper.engineHeader] {
+            let accepted = await run(command, timeout: .seconds(3))?.response.contains("OK") ?? false
+            if !accepted { addLog("\(command) not accepted, keeping the old behavior") }
+            if command == Gatekeeper.engineHeader { engineOnly = accepted }
+            guard link != nil else { return }
+        }
+    }
+
+    /// A service 01 request. With only the engine ECU answering (`engineOnly`) it ends with the response count "1",
+    /// so the adapter hands the answer over as soon as it arrives instead of waiting for more.
+    func request(_ sensor: Sensor) -> String { "01" + sensor.rawValue + (engineOnly ? "1" : "") }
 
     /// Saves make and model for the VIN just read (the "new car" screen's Save button).
     func saveCar(make: String, model: String) {

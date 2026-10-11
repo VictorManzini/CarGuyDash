@@ -8,6 +8,8 @@ struct GatekeeperTests {
         "atz", "at sp0", "ath1", "AT H1",
         "0100", "010C", "01 0C", "01 0c", "015C", "010B", "01FF",
         "0902", "09 02",
+        "ATSH7E0", "AT SH 7E0", "atsh 7e0", "ATAT1", "ATAT2", "at at2", "ATST32", "AT ST FF", "atst0a",
+        "010C1", "01 0C 1", "01331", "010CF",
     ])
     func allowedCommandsPass(_ command: String) {
         #expect(Gatekeeper.check(command) == .allowed)
@@ -23,8 +25,11 @@ struct GatekeeperTests {
         #expect(Gatekeeper.check(command) == .blocked)
     }
 
-    @Test(arguments: ["ATSH 7E0", "ATSH7DF", "atsh 7e0", "AT SH 7E0"])
-    func atshIsBlocked(_ command: String) {
+    /// Only ATSH7E0 (the engine ECU's own address) passes; any other header stays blocked.
+    @Test(arguments: [
+        "ATSH7DF", "ATSH 7DF", "ATSH7E1", "ATSH7E00", "ATSH 7E0 1", "ATSH7E", "ATSH", "ATSH18DA10F1", "ATSH7E0\r", "ATSH7E0\r04",
+    ])
+    func otherHeadersAreBlocked(_ command: String) {
         #expect(Gatekeeper.check(command) == .blocked)
     }
 
@@ -32,18 +37,19 @@ struct GatekeeperTests {
         "", " ", "01", "010", "01000", "010G", "01 0C 0D", "0103 04",
         "02 0C", "03", "07", "0A", "0902 01", "09 0A", "22 F1 90", "2E F1 90 00",
         "ATMA", "ATWS", "ATD", "ATSP6", "ATH2", "ATH", "ATZ\r04", "010C\r04", "ATZ\n", "AT", "STP 33",
+        "ATAT0", "ATAT3", "ATAT", "ATST", "ATST3", "ATST123", "ATSTGG", "010C0", "010C12", "010CG", "0902 1", "04001",
         "０１０Ｃ", // fullwidth characters
     ])
     func otherCommandsAreBlocked(_ command: String) {
         #expect(Gatekeeper.check(command) == .blocked)
     }
 
-    /// The longest allowed command has 5 characters, so any random command
-    /// of 6 or more characters (without spaces) must be blocked.
+    /// The longest allowed command has 7 characters (ATSH7E0), so any random command
+    /// of 8 or more characters (without spaces) must be blocked.
     @Test func randomLongCommandsAreBlocked() {
         let alphabet = Array("ATSPHZIEL0123456789ABCDEF\r\n")
         for _ in 0..<5_000 {
-            let length = Int.random(in: 6...16)
+            let length = Int.random(in: 8...16)
             let command = String((0..<length).map { _ in alphabet.randomElement()! })
             #expect(Gatekeeper.check(command) == .blocked, "\(command.debugDescription)")
         }
