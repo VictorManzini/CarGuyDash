@@ -23,6 +23,14 @@ struct LiveDataTests {
         #expect(liveData.value(for: .oilTemp) == 68)
     }
 
+    @Test func rpmIsAskedEveryOtherRequest() {
+        let order = BluetoothScanner.pollOrder([.coolantTemp, .rpm, .oilTemp, .manifoldPressure])
+        #expect(order == [.rpm, .coolantTemp, .rpm, .oilTemp, .rpm, .manifoldPressure])
+        // Without RPM, or with RPM alone, nothing changes.
+        #expect(BluetoothScanner.pollOrder([.coolantTemp, .oilTemp]) == [.coolantTemp, .oilTemp])
+        #expect(BluetoothScanner.pollOrder([.rpm]) == [.rpm])
+    }
+
     /// Polls the simulated adapter until `done` is true or 5 s pass.
     private func poll(noDataChance: Double, until done: (BluetoothScanner, SimulatedAdapter) -> Bool) async throws -> BluetoothScanner {
         // Own storage: the default gauge layout, whatever the simulator has saved.

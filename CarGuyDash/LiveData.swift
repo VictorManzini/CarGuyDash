@@ -51,6 +51,14 @@ extension BluetoothScanner {
     /// A sensor the car lacks or no gauge shows is never asked and stays "N/A".
     var sensorsToPoll: [Sensor] { layout.sensorsToPoll(supported: supportedPIDs) }
 
+    /// One lap of polling. With RPM on a gauge it is asked every other request (RPM, A, RPM, B, RPM, C...),
+    /// so the needle follows the engine; the others keep their order.
+    static func pollOrder(_ sensors: [Sensor]) -> [Sensor] {
+        let others = sensors.filter { $0 != .rpm }
+        guard sensors.contains(.rpm), !others.isEmpty else { return sensors }
+        return others.flatMap { [.rpm, $0] }
+    }
+
     /// How often the atmospheric pressure (0133) is asked. Once at the start, then this often,
     /// so the other sensors do not slow down.
     static let barometricEvery: TimeInterval = 30
@@ -96,7 +104,7 @@ extension BluetoothScanner {
                     continue
                 }
                 await pollBarometricPressureIfDue()
-                for sensor in sensors where !Task.isCancelled && isReady {
+                for sensor in Self.pollOrder(sensors) where !Task.isCancelled && isReady {
                     // Short timeout: a sensor that does not answer must not hold up the others.
                     let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
                     let value = result.flatMap { sensor.value(from: $0.response) }
