@@ -205,6 +205,42 @@ private func drawGlass(_ spec: FinishSpec, clip: Path, top: CGFloat, middle: CGF
     }
 }
 
+/// A rectangular instrument's bezel and face (Bar and Digital). `side` sets the bezel thickness and the corners:
+/// the Bar's width, so a Digital frame matches the Bar's in the same look and the same space.
+private struct RectHousing {
+    let outer: CGRect
+    let face: CGRect
+    let corner: CGFloat
+    let side: CGFloat
+
+    init(_ outer: CGRect, side: CGFloat, _ spec: FinishSpec) {
+        let bezel = side / 2 * spec.bezel * 1.4
+        self.outer = outer
+        self.side = side
+        face = outer.insetBy(dx: bezel, dy: bezel)
+        corner = side * 0.14 - bezel
+    }
+
+    var facePath: Path { Path(roundedRect: face, cornerRadius: corner) }
+
+    /// Bezel lit from the top, then the recessed face (same recipe as the round housing).
+    func draw(_ spec: FinishSpec, in ctx: inout GraphicsContext) {
+        ctx.fill(Path(roundedRect: outer, cornerRadius: side * 0.14),
+                 with: .linearGradient(Gradient(colors: [spec.bezelTop, spec.bezelBottom]),
+                                       startPoint: CGPoint(x: outer.midX, y: outer.minY), endPoint: CGPoint(x: outer.midX, y: outer.maxY)))
+        ctx.fill(facePath, with: .linearGradient(Gradient(colors: [spec.faceCenter, spec.faceEdge]),
+                                                 startPoint: CGPoint(x: face.midX, y: face.minY), endPoint: CGPoint(x: face.midX, y: face.maxY)))
+        ctx.drawLayer { layer in
+            layer.clip(to: facePath)
+            layer.addFilter(.blur(radius: side * 0.03))
+            var shade = Path(outer.insetBy(dx: -side, dy: -side))
+            shade.addPath(Path(roundedRect: face.insetBy(dx: side * 0.02, dy: side * 0.02).offsetBy(dx: 0, dy: side * 0.03),
+                               cornerRadius: corner))
+            layer.fill(shade, with: .color(.black.opacity(0.85)), style: FillStyle(eoFill: true))
+        }
+    }
+}
+
 /// The glass of a round gauge, with the dome's highlight on the upper left.
 private func drawRoundGlass(_ spec: FinishSpec, _ d: Dial, face f: CGFloat, in ctx: inout GraphicsContext) {
     var dome = Path()
@@ -457,8 +493,9 @@ private struct ShiftLights: View {
 
 // MARK: - Digital
 
-/// Big DIN number: white, red only from the redline. Its size follows the space it has.
-/// The number (or Stand By / N/A) is centered in the space above the name; the name stays on the row's shared line.
+/// Big DIN number: white, red only from the redline, centered in a rectangular frame in the slot's look
+/// (bezel, recessed face, glass), with the Bar's bezel thickness and corners. The frame takes the whole width
+/// and the round gauges' height (the smaller side), sitting on the bottom like the others.
 struct DigitalGauge: View {
     let reading: GaugeReading
     let finish: GaugeFinish
@@ -466,8 +503,25 @@ struct DigitalGauge: View {
     var body: some View {
         GaugeCell(reading: reading) {
             GeometryReader { geo in
-                GaugeValue(reading: reading, finish: finish, size: min(geo.size.width * 0.34, geo.size.height * 0.6))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                let spec = finish.spec
+                // The Bar's width in this same space, so bezel and corners match it.
+                let side = min(geo.size.width, geo.size.height * BarGauge.aspect)
+                let size = CGSize(width: geo.size.width, height: min(geo.size.width, geo.size.height))
+                let housing = RectHousing(CGRect(origin: .zero, size: size), side: side, spec)
+                ZStack {
+                    Canvas { context, _ in
+                        housing.draw(spec, in: &context)
+                        let face = housing.face
+                        var dome = Path()
+                        dome.move(to: CGPoint(x: face.minX + face.width * 0.08, y: face.minY + face.height * 0.12))
+                        dome.addLine(to: CGPoint(x: face.minX + face.width * 0.3, y: face.minY + face.height * 0.12))
+                        drawGlass(spec, clip: housing.facePath, top: face.minY, middle: face.midY, in: &context, dome: dome, size: side)
+                    }
+                    GaugeValue(reading: reading, finish: finish, size: min(housing.face.width * 0.3, housing.face.height * 0.5))
+                        .frame(width: housing.face.width * 0.9)
+                }
+                .frame(width: size.width, height: size.height)
+                .frame(maxHeight: .infinity, alignment: .bottom)
             }
         }
     }
@@ -490,43 +544,29 @@ struct BarGauge: View {
             .animation(GaugeLook.motion, value: reading.number)
             .overlay {
                 GeometryReader { geo in
-                    let face = Self.frame(geo.size, finish.spec).face
+                    let face = Self.housing(geo.size, finish.spec).face
                     GaugeValue(reading: reading, finish: finish, size: face.width * 0.25)
                         .frame(width: face.width * 0.9)
                         .position(x: face.midX, y: face.maxY - face.height * 0.13)
                 }
             }
-            .aspectRatio(0.62, contentMode: .fit)
+            .aspectRatio(Self.aspect, contentMode: .fit)
         }
     }
 
-    /// The bezel's outer edge, the face inside it and the face's corner radius.
-    private static func frame(_ size: CGSize, _ spec: FinishSpec) -> (outer: CGRect, face: CGRect, corner: CGFloat) {
-        let outer = CGRect(origin: .zero, size: size)
-        let side = min(size.width, size.height)
-        let bezel = side / 2 * spec.bezel * 1.4
-        return (outer, outer.insetBy(dx: bezel, dy: bezel), side * 0.14 - bezel)
+    /// Aspect ratio (width / height) of the instrument.
+    static let aspect: CGFloat = 0.62
+
+    private static func housing(_ size: CGSize, _ spec: FinishSpec) -> RectHousing {
+        RectHousing(CGRect(origin: .zero, size: size), side: min(size.width, size.height), spec)
     }
 
     private func draw(_ ctx: inout GraphicsContext, _ size: CGSize, at: Double) {
         let spec = finish.spec, range = reading.range
-        let (outer, face, corner) = Self.frame(size, spec)
-        let side = min(size.width, size.height)
-        // Bezel lit from the top, then the recessed face (same recipe as the round housing).
-        ctx.fill(Path(roundedRect: outer, cornerRadius: side * 0.14),
-                 with: .linearGradient(Gradient(colors: [spec.bezelTop, spec.bezelBottom]),
-                                       startPoint: CGPoint(x: outer.midX, y: 0), endPoint: CGPoint(x: outer.midX, y: outer.maxY)))
-        let facePath = Path(roundedRect: face, cornerRadius: corner)
-        ctx.fill(facePath, with: .linearGradient(Gradient(colors: [spec.faceCenter, spec.faceEdge]),
-                                                 startPoint: CGPoint(x: face.midX, y: face.minY), endPoint: CGPoint(x: face.midX, y: face.maxY)))
-        ctx.drawLayer { layer in
-            layer.clip(to: facePath)
-            layer.addFilter(.blur(radius: side * 0.03))
-            var shade = Path(outer.insetBy(dx: -side, dy: -side))
-            shade.addPath(Path(roundedRect: face.insetBy(dx: side * 0.02, dy: side * 0.02).offsetBy(dx: 0, dy: side * 0.03),
-                               cornerRadius: corner))
-            layer.fill(shade, with: .color(.black.opacity(0.85)), style: FillStyle(eoFill: true))
-        }
+        let housing = Self.housing(size, spec)
+        housing.draw(spec, in: &ctx)
+        let face = housing.face, facePath = housing.facePath
+        let side = housing.side
 
         // Track: 18 % of the face wide, from near the top to above the value.
         let trackWidth = face.width * 0.18
