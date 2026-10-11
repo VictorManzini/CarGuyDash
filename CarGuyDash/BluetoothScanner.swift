@@ -412,7 +412,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private func addressEngineOnly() async {
         for command in ["ATAT2", Gatekeeper.engineHeader] {
             let accepted = await run(command, timeout: .seconds(3))?.response.contains("OK") ?? false
-            if !accepted { addLog("\(command) not accepted, keeping the old behavior") }
+            addLog(accepted ? "\(command) accepted" : "\(command) not accepted, keeping the old behavior")
             if command == Gatekeeper.engineHeader { engineOnly = accepted }
             guard link != nil else { return }
         }
