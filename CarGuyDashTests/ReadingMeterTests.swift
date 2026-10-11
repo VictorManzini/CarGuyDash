@@ -7,12 +7,22 @@ struct ReadingMeterTests {
     @Test func theLineHasTheRealSecondsPhaseAndCount() {
         let start = ContinuousClock.now
         var meter = ReadingMeter(now: start)
-        for _ in 0..<128 { meter.record() }
-        #expect(meter.close(in: .background, at: start + .seconds(10)) == "10 s, background: 128 readings")
+        for _ in 0..<128 { meter.record(.coolantTemp) }
+        #expect(meter.close(in: .background, at: start + .seconds(10)) == "10 s, background: 128 readings, RPM 0.0/s, 0 ms/command")
 
         // The next window starts empty, and a late timer shows its real length.
-        meter.record()
-        #expect(meter.close(in: .active, at: start + .seconds(24)) == "14 s, active: 1 readings")
+        meter.record(.oilTemp)
+        #expect(meter.close(in: .active, at: start + .seconds(24)) == "14 s, active: 1 readings, RPM 0.0/s, 0 ms/command")
+    }
+
+    @Test func theLineHasRPMPerSecondAndTheAverageCommandTime() {
+        let start = ContinuousClock.now
+        var meter = ReadingMeter(now: start)
+        for _ in 0..<49 { meter.record(.rpm) }
+        meter.record(.coolantTemp)
+        meter.time(90)
+        meter.time(130)
+        #expect(meter.close(in: .active, at: start + .seconds(10)) == "10 s, active: 50 readings, RPM 4.9/s, 110 ms/command")
     }
 
     private func scanner() async -> BluetoothScanner {

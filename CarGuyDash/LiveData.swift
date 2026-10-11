@@ -100,7 +100,8 @@ extension BluetoothScanner {
                     // Short timeout: a sensor that does not answer must not hold up the others.
                     let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
                     let value = result.flatMap { sensor.value(from: $0.response) }
-                    if value != nil { meter.record() }
+                    if let result { meter.time(result.ms) }
+                    if value != nil { meter.record(sensor) }
                     noteReading(valid: value != nil)
                     liveData.record(value, for: sensor)
                 }
