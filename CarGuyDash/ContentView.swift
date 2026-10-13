@@ -57,6 +57,7 @@ struct ContentView: View {
         }
         .buttonStyle(.bordered)
         .padding()
+        .navigationTitle("Tests")
     }
 
     private static func text(_ value: Double?, _ unit: String) -> String {
