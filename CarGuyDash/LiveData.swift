@@ -95,6 +95,7 @@ extension BluetoothScanner {
     var wantsPolling: Bool { pollingTask?.isCancelled == false }
 
     func startPolling() {
+        stoppedByUser = false
         guard pollingTask == nil else { return }
         addLog("Start")
         pollingTask = Task {
@@ -138,7 +139,9 @@ extension BluetoothScanner {
     }
 
     /// Ends the loop after the command in progress (at most 1 s), or at once if it is waiting.
+    /// It stays off, even after a drop and reconnection, until Start or Connect.
     func stopPolling() {
+        stoppedByUser = true
         guard let pollingTask, !pollingTask.isCancelled else { return }
         addLog("Stop")
         pollingTask.cancel()

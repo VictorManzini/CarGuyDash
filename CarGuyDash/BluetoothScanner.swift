@@ -86,6 +86,11 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     @ObservationIgnored var unreadableLoggedAt: [Sensor: Date] = [:]
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
+    /// True after Stop or Disconnect: Ready does not start polling until Start or Connect.
+    /// A drop and reconnection keep it. Saved for a restore by iOS (see `setAppPhase`).
+    @ObservationIgnored var stoppedByUser = false
+    /// The real adapter starts polling by itself at Ready; the simulated one waits for Start (see `useSimulatedAdapter`).
+    @ObservationIgnored private(set) var pollsWhenReady = true
     /// Counts the valid readings of the current measurement window (see `ReadingMeter`).
     @ObservationIgnored var meter = ReadingMeter()
     /// How often the measurement line is written. Tests shorten it.
@@ -93,8 +98,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// Whether the app is on screen; set by `setAppPhase`.
     private(set) var appPhase: AppPhase
     private let defaults: UserDefaults
-    /// Saved on the iPhone each time the app goes to the background: was polling on? Read after a restore.
-    private static let pollingWasOnKey = "pollingWasOnInBackground"
+    /// Saved on the iPhone each time the app goes to the background: was polling stopped by the user? Read after a restore.
+    private static let pollingStoppedKey = "pollingStoppedByUser"
     /// One log file per app launch, in the app's Documents folder.
     let logFileURL: URL
     private let timeFormatter = DateFormatter()
@@ -168,7 +173,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     }
 
     /// Takes the adapter iOS kept for us as the known one; the usual Bluetooth-on path then connects to it.
-    /// Polling starts again if it was on when the app went to the background (Stop or Disconnect turn it off).
+    /// Polling starts again unless Stop or Disconnect was tapped before the app went to the background.
     func restore(_ peripherals: [CBPeripheral]) {
         if let peripheral = peripherals.first {
             addLog("State restored by iOS: \(peripheral.name ?? "adapter") (was already connected: \(peripheral.state == .connected))")
@@ -177,7 +182,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         } else {
             addLog("State restored by iOS: no adapter in it")
         }
-        if defaults.bool(forKey: Self.pollingWasOnKey) {
+        stoppedByUser = defaults.bool(forKey: Self.pollingStoppedKey)
+        if !stoppedByUser {
             addLog("Polling resumed after restore")
             startPolling() // waits for Ready by itself
         }
@@ -330,6 +336,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func connect() {
         guard state == .disconnected else { return }
         addLog("Connect")
+        stoppedByUser = false // a new connection: polling starts at Ready again
         if let simulator {
             link = simulator
             state = .connecting
@@ -351,7 +358,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     /// Runs the setup commands (with ATH1) on every new connection, reads the VIN and the supported PIDs,
     /// then marks it ready. Both come before "ready" so they never compete with the polling loop for the adapter.
-    /// Polling, if on, picks up again by itself once the state is ready.
+    /// Polling, if on, picks up again by itself once the state is ready; with the real adapter it also starts here
+    /// (first connection, reconnection, restore), unless Stop or Disconnect was tapped.
     private func prepare() async {
         for command in Self.setupCommands {
             _ = await run(command)
@@ -362,6 +370,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         guard link != nil else { return } // dropped again while reading the VIN or the PIDs
         state = .ready
         addLog("Ready")
+        if pollsWhenReady, !stoppedByUser { startPolling() } // already running (after a drop): nothing happens
     }
 
     /// Asks for the VIN (once per connection) and looks the car up. No VIN: carries on as "Unknown car".
@@ -439,8 +448,10 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     /// Stops looking for the real adapter and talks to the simulated one instead.
     /// Returns it so tests can see what it received.
+    /// It waits for Start; tests pass `pollsWhenReady: true` to make it start polling at Ready like the real adapter.
     @discardableResult
-    func useSimulatedAdapter() async -> SimulatedAdapter {
+    func useSimulatedAdapter(pollsWhenReady: Bool = false) async -> SimulatedAdapter {
+        self.pollsWhenReady = pollsWhenReady
         centralManager.stopScan()
         let simulated = SimulatedAdapter { [weak self] in self?.receive($0) }
         simulator = simulated
@@ -470,7 +481,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     func setAppPhase(_ phase: AppPhase) {
         guard phase != appPhase else { return }
         if isPolling { addLog(meter.close(in: appPhase)) }
-        if phase == .background { defaults.set(wantsPolling, forKey: Self.pollingWasOnKey) }
+        if phase == .background { defaults.set(stoppedByUser, forKey: Self.pollingStoppedKey) }
         appPhase = phase
         addLog(phase == .background ? "App went to the background" : "App back in the foreground")
     }

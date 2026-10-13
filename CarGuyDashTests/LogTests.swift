@@ -58,7 +58,19 @@ struct LogTests {
     @Test func aRestoreWithoutAnAdapterIsLogged() async {
         let scanner = await scanner()
         scanner.restore([]) // a real CBPeripheral cannot be built in a test
-        #expect(scanner.log.last?.hasSuffix("State restored by iOS: no adapter in it") == true)
+        #expect(scanner.log.contains { $0.hasSuffix("State restored by iOS: no adapter in it") })
+        scanner.stopPolling() // nothing was stopped by the user, so the restore started polling
+    }
+
+    @Test func aRestoreStartsPollingThatWasNeverStopped() async {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let first = await relaunched(sharing: defaults)
+        first.setAppPhase(.background) // polling never started, never stopped
+
+        let restored = await relaunched(sharing: defaults)
+        restored.restore([])
+        #expect(restored.wantsPolling)
+        restored.stopPolling()
     }
 
     /// A scanner like a new process of the app would be: same saved settings, polling off.

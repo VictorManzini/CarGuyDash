@@ -11,7 +11,7 @@ struct ContentView: View {
                 Button("Test A") { Task { await scanner.runTestA() } }
                 Button("Test B") { Task { await scanner.runTestB() } }
             }
-            .disabled(!scanner.isReady || scanner.isTesting || scanner.isPolling)
+            .disabled(!scanner.isReady || scanner.isTesting) // a test pauses polling by itself
 
             HStack {
                 Button("Start") { scanner.startPolling() }
