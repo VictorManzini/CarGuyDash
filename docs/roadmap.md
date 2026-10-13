@@ -18,7 +18,8 @@
 
 ## Phase 3 — iPhone screens
 Merged into `main` on 2026-10-13 (gauges, car profiles, editor, looks, RPM latency). Items below marked "untested in car" still need the car test.
-- [ ] 🚗 Test: new gauges in the car (live gauges page, editor, looks, per-car layout and ranges)
+Phase 3 tested in the car on 2026-10-13 (auto polling, live gauges, RPM latency) — passed.
+- [x] 🚗 Test: new gauges in the car (live gauges page, editor, looks, per-car layout and ranges) — passed 2026-10-13 (auto polling, Gauges button, values back)
 - [ ] Visual prototype of the screens (only when the owner asks)
 - [x] Four gauge styles (analog, digital, vertical bar, arc) + per-sensor ranges + Debug "Gauge preview" (checked on the simulator)
 - [x] Gauge visual polish: one family look, analog numbers on round 1-2-5 steps, metallic rim, clean arc tip (checked on the simulator)
@@ -31,7 +32,7 @@ Merged into `main` on 2026-10-13 (gauges, car profiles, editor, looks, RPM laten
 - [x] Boost gauge on the Dashboard (manifold − atmospheric)
 - [x] 🚗 Boost test: 0.01 bar engine off, −0.3 to −0.5 bar at idle, ~0.3 bar on a slope; speed unchanged with `0133` (130–139 per 10 s)
 - [x] RPM latency: RPM every other request, short needle animation (simulator 1.5 → 4.4 RPM/s; engine-only header + response count removed: 0 readings in the M135i; untested in car)
-- [ ] 🚗 Test: RPM latency in the car (RPM/s and ms/command in the log, needle without lag)
+- [x] 🚗 Test: RPM latency in the car (RPM/s and ms/command in the log, needle without lag) — passed 2026-10-13
 - [x] Car profiles editable without the car: each car keeps its own gauge layout and ranges, Settings → Cars (add, edit, use, delete), link a new VIN to a car created by hand (untested in car)
 - [ ] All-sensors page (Car Scanner style)
 - [x] Settings: units (°C/°F, bar/psi/kPa, km/h/mph) — simple screen from the Dashboard gear button
