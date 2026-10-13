@@ -29,7 +29,7 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 ## Screens
 
 - **Home page:** one button per page + a Connect button (becomes Disconnect once connected).
-- **Gauges:** 1 to 6, count and design chosen by the user, individual design per gauge. Portrait and landscape. Four styles exist (analog, digital, vertical bar, arc; see `feature/gauge-styles`); the gauges page itself is not built yet.
+- **Gauges:** 1 to 6, count and design chosen by the user, individual design per gauge. Portrait and landscape. Four styles exist (analog, digital, vertical bar, arc; see `feature/gauge-styles`); the gauges page is Live gauges, opened by the Dashboard's "Gauges" button (`feature/app-navigation`).
 - **Gauge editing:** separate page (avoids accidental taps while driving). Sets count, design, sensor and redline for each gauge. When disconnected, shows every sensor in the enum; a sensor the car does not support shows "N/A".
 - **Sensors:** all sensors with fast readings, Car Scanner style. Reads all PIDs while open. Not shown on CarPlay.
 - **Settings (essentials):** choose OBD adapter (remember the last one, connect on launch), units (°C/°F, bar/psi/kPa, km/h/mph), simulation mode, keep screen on in gauges, redline alerts (sound/vibration, can be turned off).
@@ -175,6 +175,11 @@ Third stack, merged into `main` on 2026-10-09 (night) after the in-car test, in 
   - **Simulated adapter:** still waits for Start (Start/Stop stay on Tests for it and for pausing). Tests make it act like the real one with `useSimulatedAdapter(pollsWhenReady: true)`.
   - **Test A / Test B** can be tapped while polling: they stop polling, wait for the command in progress to finish (`await pollingTask?.value`), run, then start polling again if it was on (`withPollingPaused` in `CarTests.swift`). Test A/B themselves are unchanged (they still send the setup commands, which leave the adapter as polling needs it).
   - No new command; car silent / Stand By and the 0133 rule unchanged.
+- **`feature/app-navigation`** (stacked on `feature/auto-polling`, not merged, untested in the car; navigation only, gauge drawing, layouts and polling unchanged):
+  - **Live gauges** is a real screen in every build (no longer `#if DEBUG`): the blue "Gauges" button under the "car · state" line on the Dashboard opens it. It shows the active car's gauges with live values; with the real adapter polling starts by itself, so no Start is needed. Its `-liveGauges.autoStart YES` code stays (Debug only): the simulated adapter still waits for Start.
+  - **Settings → Developer** (bottom, Debug only): Gauge preview and Gauge lab, moved from Tests. Not in a Release build.
+  - **Tests** keeps Test A, Test B, Start, Stop, the Debug sensor value list, Simulated adapter, Simulate disconnect, Copy/Share and the log; no gauge links.
+  - Launch arguments unchanged (`-openGaugePreview`, `-openGaugeLab`, `-openGaugeEditor`, `-openLiveGauges`, `-forceLandscape`), plus Debug-only `-openSettings YES` and `-openTests YES` for screenshots. Screenshots `shots/nav-*` (simulator).
 - **`feature/boost`** (stacked on `feature/units`): the Dashboard block "Manifold pressure" became "Boost" = manifold (0B) − atmospheric (0133), in kPa inside, shown in the chosen pressure unit (bar 2, psi 1, kPa 0); negative = vacuum. The manifold is still polled, just not shown. `0133` is asked once when polling starts (and again after a connection drop), then every 30 s (`pollBarometricPressureIfDue`, not part of the silence check or the readings meter); it lives 60 s in `LiveData` (the other sensors 2 s). Missing or old manifold/atmospheric = "N/A", never a default atmospheric value. The simulated adapter answers `0133` with `5D` (93 kPa) and makes the manifold follow the drawn RPM in a straight line (750 rpm = 88 kPa, 3000 rpm = 190 kPa), so Boost swings from about −0.05 to +0.97 bar. Stand By, N/A and "Ignition off?" apply as before.
 
 ## Pending in-car tests (owner)

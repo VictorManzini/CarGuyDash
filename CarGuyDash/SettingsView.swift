@@ -30,6 +30,12 @@ struct SettingsView: View {
             } footer: {
                 if profiles.active == nil { Text("Gauges and sensor ranges belong to a car. Add one in Cars.") }
             }
+            #if DEBUG
+            Section("Developer") {
+                NavigationLink("Gauge preview") { GaugePreviewView(scanner: scanner) }
+                NavigationLink("Gauge lab") { GaugeLabView(scanner: scanner) }
+            }
+            #endif
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)

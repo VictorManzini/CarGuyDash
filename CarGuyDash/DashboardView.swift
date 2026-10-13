@@ -18,6 +18,9 @@ struct DashboardView: View {
     @State private var openGaugeEditor = UserDefaults.standard.bool(forKey: "openGaugeEditor")
     /// Screenshots: `-openGaugeLab YES` opens the gauge look lab directly.
     @State private var openGaugeLab = UserDefaults.standard.bool(forKey: "openGaugeLab")
+    /// Screenshots: `-openSettings YES` and `-openTests YES` open those screens directly.
+    @State private var openSettings = UserDefaults.standard.bool(forKey: "openSettings")
+    @State private var openTests = UserDefaults.standard.bool(forKey: "openTests")
     #endif
 
     var body: some View {
@@ -26,6 +29,11 @@ struct DashboardView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
+                    NavigationLink { LiveGaugesView(scanner: scanner) } label: {
+                        Label("Gauges", systemImage: "gauge.with.dots.needle.67percent").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     block(.rpm, valueSize: 96)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         ForEach(Self.sensors.filter { $0 != .rpm }, id: \.self) { sensor in
@@ -44,6 +52,8 @@ struct DashboardView: View {
         .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView(scanner: scanner) }
         .navigationDestination(isPresented: $openLiveGauges) { LiveGaugesView(scanner: scanner) }
         .navigationDestination(isPresented: $openGaugeLab) { GaugeLabView(scanner: scanner) }
+        .navigationDestination(isPresented: $openSettings) { SettingsView(unitSettings: unitSettings, scanner: scanner) }
+        .navigationDestination(isPresented: $openTests) { ContentView(scanner: scanner) }
         .task {
             // Simulator screenshots in landscape (it cannot be rotated without the Simulator window): `-forceLandscape YES`.
             guard UserDefaults.standard.bool(forKey: "forceLandscape"),
