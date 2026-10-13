@@ -8,8 +8,28 @@ extension BluetoothScanner {
     /// Setup + battery voltage, the supported-PID blocks, then a fixed list of PIDs.
     /// Logs each raw response and its time. Not 0902: the VIN is read on connecting and kept out of the logs.
     func runTestA() async {
+        await withPollingPaused { await testA() }
+    }
+
+    /// Speed test: 010C alone for 10 s, then the 010C/010B/015C/0105 cycle for 10 s.
+    /// Logs readings per second for each PID.
+    func runTestB() async {
+        await withPollingPaused { await testB() }
+    }
+
+    /// Runs a test with polling paused, so the two never ask the adapter at the same time: stops polling,
+    /// waits for the command in progress to finish, runs the test, then starts polling again if it was on.
+    private func withPollingPaused(_ test: () async -> Void) async {
         isTesting = true
         defer { isTesting = false }
+        let wasPolling = wantsPolling
+        if wasPolling { stopPolling() }
+        await pollingTask?.value // also a loop that was already winding down
+        await test()
+        if wasPolling { startPolling() }
+    }
+
+    private func testA() async {
         addLog("=== Test A ===")
         for command in Self.setupCommands + ["ATRV"] { await runAndLog(command) }
 
@@ -28,11 +48,7 @@ extension BluetoothScanner {
         addLog("=== Test A finished ===")
     }
 
-    /// Speed test: 010C alone for 10 s, then the 010C/010B/015C/0105 cycle for 10 s.
-    /// Logs readings per second for each PID.
-    func runTestB() async {
-        isTesting = true
-        defer { isTesting = false }
+    private func testB() async {
         addLog("=== Test B (speed) ===")
         for command in Self.setupCommands { await runAndLog(command) }
         addLog("Phase 1: 010C only, 10 s")

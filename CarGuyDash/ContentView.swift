@@ -11,7 +11,7 @@ struct ContentView: View {
                 Button("Test A") { Task { await scanner.runTestA() } }
                 Button("Test B") { Task { await scanner.runTestB() } }
             }
-            .disabled(!scanner.isReady || scanner.isTesting || scanner.isPolling)
+            .disabled(!scanner.isReady || scanner.isTesting) // a test pauses polling by itself
 
             HStack {
                 Button("Start") { scanner.startPolling() }
@@ -37,9 +37,6 @@ struct ContentView: View {
                 .disabled(scanner.state != .searching && scanner.state != .bluetoothOff)
             Button("Simulate disconnect") { scanner.simulateDisconnect() }
                 .disabled(scanner.simulator == nil || !scanner.isReady)
-            NavigationLink("Gauge preview") { GaugePreviewView(scanner: scanner) }
-            NavigationLink("Live gauges") { LiveGaugesView(scanner: scanner) }
-            NavigationLink("Gauge lab") { GaugeLabView(scanner: scanner) }
             #endif
 
             HStack {

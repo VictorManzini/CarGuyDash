@@ -1,7 +1,7 @@
-#if DEBUG
 import SwiftUI
 
-/// Debug only: the gauges of the active car's layout (Settings → Gauges) with real values, each in its own style.
+/// The gauges page (the Dashboard's "Gauges" button): the active car's layout (Settings → Gauges) with live values,
+/// each gauge in its own style.
 /// Same data as the Dashboard (LiveData, `gaugeText`, the units from Settings).
 struct LiveGaugesView: View {
     let scanner: BluetoothScanner
@@ -26,13 +26,16 @@ struct LiveGaugesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .background(.black)
         .preferredColorScheme(.dark)
+        #if DEBUG
         .task {
-            // Simulator check without taps: `-liveGauges.autoStart YES` uses the simulated adapter and starts polling.
+            // Simulator check without taps: `-liveGauges.autoStart YES` uses the simulated adapter and starts polling
+            // (still needed: only the real adapter starts polling by itself).
             guard UserDefaults.standard.bool(forKey: "liveGauges.autoStart") else { return }
             await scanner.useSimulatedAdapter()
             if scanner.needsCarInfo { scanner.skipCarInfo() }
             scanner.startPolling()
         }
+        #endif
     }
 
     /// Same value and text as the Dashboard block; the Boost is manifold − atmospheric.
@@ -49,4 +52,3 @@ struct LiveGaugesView: View {
 #Preview {
     NavigationStack { LiveGaugesView(scanner: BluetoothScanner()) }
 }
-#endif
