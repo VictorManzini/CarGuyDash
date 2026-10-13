@@ -16,6 +16,16 @@ struct GaugeLayoutTests {
         #expect(GaugeLayout(slots: GaugeLayout.standard.slots, count: 99).count == 6)
     }
 
+    @Test func menuOrderHasTheFavoritesFirstThenTheRestByName() {
+        let order = GaugeSource.menuOrder
+        let favorites: [GaugeSource] = [.sensor(.rpm), .sensor(.coolantTemp), .sensor(.oilTemp), .sensor(.speed), .boost, .sensor(.moduleVoltage)]
+        #expect(Array(order.prefix(6)) == favorites)
+        #expect(order.count == GaugeSource.all.count)
+        #expect(Set(order) == Set(GaugeSource.all)) // every source, exactly once (count and set size match)
+        let rest = order.dropFirst(6).map(\.name)
+        #expect(rest == rest.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending })
+    }
+
     @Test func removingAGaugeKeepsTheOrderAndAllSixSlots() {
         var layout = GaugeLayout.standard
         layout.count = 4 // RPM, coolant, oil, Boost visible

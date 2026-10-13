@@ -53,7 +53,7 @@ struct GaugeLayoutEditor: View {
                 Form {
                     Section("Gauge \(index + 1)") {
                         Picker("Sensor", selection: layout.slots[index].source) {
-                            ForEach(GaugeSource.all, id: \.self) { Text($0.name) }
+                            ForEach(GaugeSource.menuOrder, id: \.self) { Text($0.name) }
                         }
                         Picker("Style", selection: layout.slots[index].style) {
                             ForEach(GaugeStyle.allCases, id: \.self) { Text($0.rawValue) }
@@ -94,7 +94,7 @@ struct SensorRangesView: View {
     let carID: UUID
 
     var body: some View {
-        List(GaugeSource.all, id: \.self) { source in
+        List(GaugeSource.menuOrder, id: \.self) { source in
             NavigationLink(source.name) { SensorRangeEditor(source: source, units: units, profiles: profiles, carID: carID) }
         }
         .navigationTitle("Sensor ranges")
