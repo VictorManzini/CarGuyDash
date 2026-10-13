@@ -1,12 +1,7 @@
 import SwiftUI
 
-/// Gauges, numbers only: RPM on top, the other sensors in a 2-column grid.
+/// Home screen: car name and status, Connect / Disconnect, and one big button per page.
 struct DashboardView: View {
-    /// The fixed list of this screen. Polling follows the gauge layout, so a sensor outside it shows "N/A" here.
-    private static let sensors: [Sensor] = [
-        .rpm, .oilTemp, .coolantTemp, .manifoldPressure, .intakeAirTemp, .throttlePosition, .moduleVoltage,
-    ]
-
     let scanner: BluetoothScanner
     let unitSettings: UnitSettings
     #if DEBUG
@@ -23,26 +18,33 @@ struct DashboardView: View {
     @State private var openTests = UserDefaults.standard.bool(forKey: "openTests")
     #endif
 
+    /// Landscape iPhones are short, so the page buttons sit in two columns there.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     var body: some View {
-        // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
-        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            ScrollView {
-                VStack(spacing: 12) {
-                    Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("\(scanner.carName) · \(scanner.statusText)").font(.headline).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                connectButton
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: verticalSizeClass == .compact ? 2 : 1), spacing: 12) {
                     NavigationLink { LiveGaugesView(scanner: scanner) } label: {
-                        Label("Gauges", systemImage: "gauge.with.dots.needle.67percent").frame(maxWidth: .infinity)
+                        pageLabel("Gauges", systemImage: "gauge.with.dots.needle.67percent")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    block(.rpm, valueSize: 96)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(Self.sensors.filter { $0 != .rpm }, id: \.self) { sensor in
-                            block(sensor, valueSize: 56)
-                        }
+                    // No page yet: disabled, with a caption.
+                    Button {} label: { pageLabel("Sensors", systemImage: "list.bullet.rectangle", caption: "Coming soon") }
+                        .disabled(true)
+                    NavigationLink { ContentView(scanner: scanner) } label: {
+                        pageLabel("Tests", systemImage: "checklist")
+                    }
+                    NavigationLink { SettingsView(unitSettings: unitSettings, scanner: scanner) } label: {
+                        pageLabel("Settings", systemImage: "gearshape")
                     }
                 }
-                .padding()
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
+            .padding()
         }
         // Swiping the screen down closes it without saving: "Unknown car" until the next connection.
         .sheet(isPresented: Binding(get: { scanner.needsCarInfo }, set: { if !$0 { scanner.skipCarInfo() } })) {
@@ -70,47 +72,32 @@ struct DashboardView: View {
         #endif
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if scanner.state == .disconnected {
-                    Button("Connect") { scanner.connect() }
-                } else {
-                    Button("Disconnect") { scanner.disconnect() }
-                }
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                NavigationLink("Tests") { ContentView(scanner: scanner) }
-                NavigationLink { SettingsView(unitSettings: unitSettings, scanner: scanner) } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Settings")
-            }
-        }
     }
 
-    /// Big value, small unit and name. "Stand By" or "N/A" (no number) in grey, without the unit.
-    /// The manifold pressure block shows the turbo (manifold minus atmospheric) as "Boost": same unit and decimals.
-    private func block(_ sensor: Sensor, valueSize: CGFloat) -> some View {
-        let isBoost = sensor == .manifoldPressure
-        let value = isBoost ? scanner.liveData.boost : scanner.liveData.value(for: sensor)
-        let hasNumber = scanner.state == .ready && !scanner.carSilent && value != nil
-        let text = gaugeText(for: sensor, state: scanner.state, value: value, silent: scanner.carSilent, units: unitSettings.units)
-        // "Stand By" is a long word, so it gets a smaller size than a number.
-        let size = text == "Stand By" ? valueSize * 0.55 : valueSize
-        return VStack(spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(text)
-                    .font(.system(size: size, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(hasNumber ? .primary : .secondary)
-                if hasNumber {
-                    Text(sensor.displayUnit(unitSettings.units)).font(.headline).foregroundStyle(.secondary)
-                }
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
-            Text(isBoost ? "Boost" : sensor.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+    /// Becomes Disconnect once the adapter is not disconnected.
+    private var connectButton: some View {
+        let isDisconnected = scanner.state == .disconnected
+        return Button {
+            if isDisconnected { scanner.connect() } else { scanner.disconnect() }
+        } label: {
+            Text(isDisconnected ? "Connect" : "Disconnect").font(.title3.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(.fill.tertiary, in: .rect(cornerRadius: 12))
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(isDisconnected ? .accentColor : .red)
+    }
+
+    /// Icon on the left, title next to it, optional small caption under the title. Same height for every button.
+    private func pageLabel(_ title: String, systemImage: String, caption: String? = nil) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage).font(.title2).frame(width: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.title3.weight(.semibold))
+                if let caption { Text(caption).font(.caption).foregroundStyle(.secondary) }
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, minHeight: 48)
     }
 }
 
