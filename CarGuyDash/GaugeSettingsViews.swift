@@ -82,7 +82,7 @@ struct GaugeLayoutEditor: View {
         let range = profiles.profile(id: carID)?.range(for: source) ?? .standard(for: source)
         let value = (range.normalLow + range.normalHigh) / 2
         let reading = GaugeReading(sensor: source.sensor, text: source.sensor.text(for: value, units: units), value: value,
-                                   range: range, units: units, name: source.name)
+                                   range: range, units: units, name: source.name, isBoost: source == .boost)
         return StyledGauge(style: slot.style, finish: slot.look, reading: reading)
     }
 }

@@ -11,6 +11,8 @@ nonisolated struct GaugeReading {
     let units: Units
     /// Label under the gauge when it is not the sensor's name ("Boost" for the manifold pressure).
     var name: String? = nil
+    /// True for the Boost gauge: it moves like RPM (a short linear move) instead of the spring.
+    var isBoost = false
 
     /// The value to draw; nil while the text is "Stand By" or "N/A" (no needle movement, no fill).
     var number: Double? { text == "Stand By" || text == "N/A" ? nil : value }
@@ -38,11 +40,11 @@ enum GaugeLook {
 
     /// Critically damped: follows the value smoothly, never overshoots.
     static let motion = Animation.spring(response: 0.3, dampingFraction: 1)
-    /// RPM changes fast, so its needle and fill only cover the gap to the next reading: a short linear move.
+    /// RPM and Boost change fast, so their needle and fill only cover the gap to the next reading: a short linear move.
     /// RPM arrives about every 0.2 s (every other request, ~100 ms each); capped at 0.12 s so it never trails the engine.
-    static let rpmMotion = Animation.linear(duration: 0.12)
+    static let fastMotion = Animation.linear(duration: 0.12)
 
-    static func motion(for sensor: Sensor) -> Animation { sensor == .rpm ? rpmMotion : motion }
+    static func motion(for reading: GaugeReading) -> Animation { reading.sensor == .rpm || reading.isBoost ? fastMotion : motion }
 
     /// The value text size every Digital, Bar and Arc gauge of one grid shares, from the cell's size:
     /// a fifth of the cell's smaller side once the name line (about 24 pt with its gap) is taken off.
@@ -378,7 +380,7 @@ struct AnalogGauge: View {
                     AnimatedCanvas(at: reading.range.fraction(reading.number ?? reading.range.min)) { context, size, at in
                         draw(&context, size, at: at)
                     }
-                    .animation(GaugeLook.motion(for: reading.sensor), value: reading.number)
+                    .animation(GaugeLook.motion(for: reading), value: reading.number)
                     if reading.number == nil {
                         // Stand By / N/A: near-transparent grey layer + red text in the center (needle and cap hidden).
                         Circle().fill(.gray.opacity(0.35))
@@ -546,7 +548,7 @@ struct BarGauge: View {
             AnimatedCanvas(at: reading.range.fraction(reading.number ?? reading.range.min)) { context, size, at in
                 draw(&context, size, at: at)
             }
-            .animation(GaugeLook.motion(for: reading.sensor), value: reading.number)
+            .animation(GaugeLook.motion(for: reading), value: reading.number)
             .overlay {
                 GeometryReader { geo in
                     let face = Self.housing(geo.size, finish.spec).face
@@ -642,7 +644,7 @@ struct ArcGauge: View {
             AnimatedCanvas(at: reading.range.fraction(reading.number ?? reading.range.min)) { context, size, at in
                 draw(&context, size, at: at)
             }
-            .animation(GaugeLook.motion(for: reading.sensor), value: reading.number)
+            .animation(GaugeLook.motion(for: reading), value: reading.number)
             .overlay {
                 GeometryReader { geo in
                     let f = Dial(geo.size).r * (1 - finish.spec.bezel)
