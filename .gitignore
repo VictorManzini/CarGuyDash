@@ -22,3 +22,6 @@ graphify-out/
 # In-car test logs: they contain the VIN
 log-*.txt
 [Tt]est*.txt
+
+# Simulator screenshots of the gauge preview
+shots/

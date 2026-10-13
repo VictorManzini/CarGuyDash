@@ -1,9 +1,24 @@
 import SwiftUI
 
-/// Gauges, numbers only: RPM on top, the other polled sensors in a 2-column grid.
+/// Gauges, numbers only: RPM on top, the other sensors in a 2-column grid.
 struct DashboardView: View {
+    /// The fixed list of this screen. Polling follows the gauge layout, so a sensor outside it shows "N/A" here.
+    private static let sensors: [Sensor] = [
+        .rpm, .oilTemp, .coolantTemp, .manifoldPressure, .intakeAirTemp, .throttlePosition, .moduleVoltage,
+    ]
+
     let scanner: BluetoothScanner
     let unitSettings: UnitSettings
+    #if DEBUG
+    /// Screenshots: launching with `-openGaugePreview YES` opens the gauge preview directly.
+    @State private var openGaugePreview = UserDefaults.standard.bool(forKey: "openGaugePreview")
+    /// Simulator check: `-openLiveGauges YES` opens the live gauges directly.
+    @State private var openLiveGauges = UserDefaults.standard.bool(forKey: "openLiveGauges")
+    /// Simulator check: `-openGaugeEditor YES` opens the active car's gauge editor (Settings → Cars → car → Gauges) directly.
+    @State private var openGaugeEditor = UserDefaults.standard.bool(forKey: "openGaugeEditor")
+    /// Screenshots: `-openGaugeLab YES` opens the gauge look lab directly.
+    @State private var openGaugeLab = UserDefaults.standard.bool(forKey: "openGaugeLab")
+    #endif
 
     var body: some View {
         // Redraws twice a second, so a value turns "N/A" even when nothing new arrives.
@@ -13,7 +28,7 @@ struct DashboardView: View {
                     Text("\(scanner.carName) · \(scanner.statusText)").font(.caption).foregroundStyle(.secondary)
                     block(.rpm, valueSize: 96)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(BluetoothScanner.polledSensors.filter { $0 != .rpm }, id: \.self) { sensor in
+                        ForEach(Self.sensors.filter { $0 != .rpm }, id: \.self) { sensor in
                             block(sensor, valueSize: 56)
                         }
                     }
@@ -25,6 +40,24 @@ struct DashboardView: View {
         .sheet(isPresented: Binding(get: { scanner.needsCarInfo }, set: { if !$0 { scanner.skipCarInfo() } })) {
             CarInfoView(scanner: scanner)
         }
+        #if DEBUG
+        .navigationDestination(isPresented: $openGaugePreview) { GaugePreviewView(scanner: scanner) }
+        .navigationDestination(isPresented: $openLiveGauges) { LiveGaugesView(scanner: scanner) }
+        .navigationDestination(isPresented: $openGaugeLab) { GaugeLabView(scanner: scanner) }
+        .task {
+            // Simulator screenshots in landscape (it cannot be rotated without the Simulator window): `-forceLandscape YES`.
+            guard UserDefaults.standard.bool(forKey: "forceLandscape"),
+                  let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+        }
+        .navigationDestination(isPresented: $openGaugeEditor) {
+            if let car = scanner.profiles.active {
+                GaugeLayoutEditor(units: unitSettings.units, profiles: scanner.profiles, carID: car.id)
+            } else {
+                ContentUnavailableView("No cars yet", systemImage: "car")
+            }
+        }
+        #endif
         .navigationTitle("Dashboard")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -37,7 +70,7 @@ struct DashboardView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink("Tests") { ContentView(scanner: scanner) }
-                NavigationLink { SettingsView(unitSettings: unitSettings) } label: { Image(systemName: "gearshape") }
+                NavigationLink { SettingsView(unitSettings: unitSettings, scanner: scanner) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
             }
         }

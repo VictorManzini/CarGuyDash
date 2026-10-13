@@ -63,7 +63,14 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     /// The saved cars (only on this iPhone).
     let profiles: CarProfiles
     /// The car of the current connection; nil = no VIN or not named yet ("Unknown car").
-    private(set) var car: CarProfile?
+    private(set) var carID: UUID?
+    var car: CarProfile? { carID.flatMap { profiles.profile(id: $0) } }
+    /// The car matched by VIN while a connection is up (or coming back): it cannot be deleted.
+    var connectedCarID: UUID? { state == .disconnected ? nil : car?.id }
+    /// The gauges of the active car (the app's defaults when there is no car yet); polling asks their sensors.
+    var layout: GaugeLayout { profiles.active?.layout ?? .standard }
+    /// A gauge's scale from the active car (the default one when there is no car yet).
+    func range(for source: GaugeSource) -> GaugeRange { profiles.active?.range(for: source) ?? .standard(for: source) }
     /// VIN of the current connection; nil if the car did not answer. Never logged: the logs get pasted around.
     private(set) var vin: String?
     /// True when the VIN is new and the app waits for make and model.
@@ -75,6 +82,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private(set) var supportedPIDs: Set<Int>?
     /// When the atmospheric pressure was last asked; nil = ask on the next loop. See `pollBarometricPressureIfDue`.
     @ObservationIgnored var baroAskedAt: Date?
+    /// When each sensor's unreadable answer was last logged. See `logUnreadable`.
+    @ObservationIgnored var unreadableLoggedAt: [Sensor: Date] = [:]
     /// The running polling loop; nil when stopped.
     var pollingTask: Task<Void, Never>?
     /// Counts the valid readings of the current measurement window (see `ReadingMeter`).
@@ -122,6 +131,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         FileManager.default.createFile(atPath: logFileURL.path(), contents: nil)
         logFile = try? FileHandle(forWritingTo: logFileURL)
         super.init()
+        // A loop waiting because none of the old gauges could be asked looks at the new ones.
+        profiles.onChange = { [weak self] in self?.wakeStateWaiter() }
         // queue: nil delivers delegate callbacks on the main queue.
         // The restore identifier lets iOS relaunch the app in the background and hand the connection back (see `restore`).
         centralManager = CBCentralManager(
@@ -359,7 +370,8 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         // Short timeout: a car that does not answer must not hold up the readings.
         let result = await run("0902", timeout: .seconds(3))
         vin = result.flatMap { VIN.decode(from: $0.response) }
-        car = vin.flatMap { profiles.profile(for: $0) }
+        carID = vin.flatMap { profiles.profile(for: $0)?.id }
+        if let carID { profiles.use(carID) } // connected = this car's layout and ranges
         if vin == nil {
             addLog("VIN: not available")
         } else if car == nil {
@@ -393,13 +405,27 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     /// Saves make and model for the VIN just read (the "new car" screen's Save button).
     func saveCar(make: String, model: String) {
-        let make = make.trimmingCharacters(in: .whitespaces), model = model.trimmingCharacters(in: .whitespaces)
-        guard let vin, !make.isEmpty, !model.isEmpty else { return }
-        let profile = CarProfile(vin: vin, make: make, model: model)
-        profiles.save(profile)
-        car = profile
+        guard let vin, let profile = profiles.add(make: make, model: model, vin: vin) else { return }
+        carID = profile.id
+        profiles.use(profile.id)
         needsCarInfo = false
         addLog("Car profile saved") // never the VIN, make or model: the logs get pasted around
+    }
+
+    /// Links the VIN just read to a car created by hand ("Is it one of these?"). A car already linked is left alone.
+    func linkCar(_ id: UUID) {
+        guard let vin, profiles.profile(id: id)?.vin == nil else { return }
+        profiles.update(id) { $0.vin = vin }
+        carID = id
+        profiles.use(id)
+        needsCarInfo = false
+        addLog("Car profile linked") // never the VIN, make or model
+    }
+
+    /// Deletes a saved car, unless it is the one connected now.
+    func deleteCar(_ id: UUID) {
+        guard id != connectedCarID else { return }
+        profiles.delete(id)
     }
 
     /// The new-car screen was closed without saving: "Unknown car" until the next connection asks again.

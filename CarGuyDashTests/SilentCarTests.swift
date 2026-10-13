@@ -40,7 +40,7 @@ struct SilentCarTests {
         #expect(scanner.carSilent)
         #expect(scanner.state == .ready) // the Bluetooth connection is untouched
         #expect(scanner.statusText == "Ignition off?")
-        for sensor in BluetoothScanner.polledSensors { #expect(text(scanner, sensor) == "Stand By", "\(sensor)") }
+        for sensor in scanner.sensorsToPoll { #expect(text(scanner, sensor) == "Stand By", "\(sensor)") }
         let asked = simulated.received.count
         try await Task.sleep(for: .milliseconds(300))
         #expect(simulated.received.count > asked) // polling keeps asking

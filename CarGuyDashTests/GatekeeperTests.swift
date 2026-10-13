@@ -23,7 +23,7 @@ struct GatekeeperTests {
         #expect(Gatekeeper.check(command) == .blocked)
     }
 
-    @Test(arguments: ["ATSH 7E0", "ATSH7DF", "atsh 7e0", "AT SH 7E0"])
+    @Test(arguments: ["ATSH 7E0", "ATSH7E0", "ATSH7DF", "atsh 7e0", "AT SH 7E0"])
     func atshIsBlocked(_ command: String) {
         #expect(Gatekeeper.check(command) == .blocked)
     }
@@ -32,6 +32,7 @@ struct GatekeeperTests {
         "", " ", "01", "010", "01000", "010G", "01 0C 0D", "0103 04",
         "02 0C", "03", "07", "0A", "0902 01", "09 0A", "22 F1 90", "2E F1 90 00",
         "ATMA", "ATWS", "ATD", "ATSP6", "ATH2", "ATH", "ATZ\r04", "010C\r04", "ATZ\n", "AT", "STP 33",
+        "ATAT1", "ATAT2", "ATST32", "010C1", // removed: broke the readings on the M135i
         "０１０Ｃ", // fullwidth characters
     ])
     func otherCommandsAreBlocked(_ command: String) {

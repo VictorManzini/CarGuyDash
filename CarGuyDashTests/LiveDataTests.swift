@@ -23,9 +23,18 @@ struct LiveDataTests {
         #expect(liveData.value(for: .oilTemp) == 68)
     }
 
+    @Test func rpmIsAskedEveryOtherRequest() {
+        let order = BluetoothScanner.pollOrder([.coolantTemp, .rpm, .oilTemp, .manifoldPressure])
+        #expect(order == [.rpm, .coolantTemp, .rpm, .oilTemp, .rpm, .manifoldPressure])
+        // Without RPM, or with RPM alone, nothing changes.
+        #expect(BluetoothScanner.pollOrder([.coolantTemp, .oilTemp]) == [.coolantTemp, .oilTemp])
+        #expect(BluetoothScanner.pollOrder([.rpm]) == [.rpm])
+    }
+
     /// Polls the simulated adapter until `done` is true or 5 s pass.
     private func poll(noDataChance: Double, until done: (BluetoothScanner, SimulatedAdapter) -> Bool) async throws -> BluetoothScanner {
-        let scanner = BluetoothScanner()
+        // Own storage: the default gauge layout, whatever the simulator has saved.
+        let scanner = BluetoothScanner(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let simulated = await scanner.useSimulatedAdapter()
         simulated.noDataChance = noDataChance
         scanner.startPolling()
@@ -39,14 +48,14 @@ struct LiveDataTests {
 
     @Test func pollingFillsEverySensor() async throws {
         let scanner = try await poll(noDataChance: 0) { scanner, _ in
-            BluetoothScanner.polledSensors.allSatisfy { scanner.liveData.value(for: $0) != nil }
+            scanner.sensorsToPoll.allSatisfy { scanner.liveData.value(for: $0) != nil }
         }
         let liveData = scanner.liveData
         #expect(liveData.value(for: .oilTemp) == 67)
         #expect(liveData.value(for: .coolantTemp) == 69)
         #expect((88...190).contains(try #require(liveData.value(for: .manifoldPressure)))) // follows the RPM
         #expect(liveData.value(for: .intakeAirTemp) == 45)
-        #expect(liveData.value(for: .throttlePosition) == 78 * 100 / 255.0)
+        #expect(liveData.value(for: .throttlePosition) == nil) // no gauge shows it, so it is not asked
         #expect(liveData.value(for: .moduleVoltage) == 14.1)
         #expect((750...3000).contains(try #require(liveData.value(for: .rpm))))
     }
@@ -54,9 +63,31 @@ struct LiveDataTests {
     @Test func noDataLeavesEverySensorNA() async throws {
         // Wait until the last sensor of the cycle was asked for.
         let scanner = try await poll(noDataChance: 1) { _, simulated in simulated.received.contains("0142\r") }
-        for sensor in BluetoothScanner.polledSensors {
+        for sensor in scanner.sensorsToPoll {
             #expect(scanner.liveData.value(for: sensor) == nil, "\(sensor)")
         }
+    }
+
+    @Test func unreadableAnswersAreLoggedRawAtMostEvery10Seconds() {
+        let scanner = BluetoothScanner()
+        var clock = Date(timeIntervalSince1970: 0)
+        scanner.liveData.now = { clock }
+        func lines() -> [String] { scanner.log.filter { $0.contains("No value from") } }
+
+        scanner.logUnreadable("NO DATA\r\r>", for: .rpm)
+        #expect(lines().last?.hasSuffix(#"No value from 010C: "NO DATA\r\r>""#) == true)
+        clock += 9
+        scanner.logUnreadable("NO DATA\r\r>", for: .rpm)
+        #expect(lines().count == 1) // same sensor within 10 s: skipped
+        scanner.logUnreadable("?\r\r>", for: .oilTemp)
+        #expect(lines().count == 2) // another sensor has its own 10 s
+        clock += 1
+        scanner.logUnreadable("NO DATA\r\r>", for: .rpm)
+        #expect(lines().count == 3)
+        clock += 10
+        scanner.logUnreadable("7E81014490201574241\r\r>", for: .rpm)
+        #expect(lines().count == 3) // the VIN never reaches the log
+        #expect(!scanner.log.contains { $0.contains("490201") })
     }
 
     @Test func pollingStops() async throws {

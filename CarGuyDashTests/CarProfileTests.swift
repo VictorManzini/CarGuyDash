@@ -106,6 +106,196 @@ struct CarProfileTests {
     }
 }
 
+/// Per-car layouts and ranges, cars created by hand, the active car, and the migration from the old storage.
+@MainActor
+struct CarProfilesTests {
+    private func freshDefaults() -> UserDefaults {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }
+
+    private func waitReady(_ scanner: BluetoothScanner) async throws {
+        let start = ContinuousClock.now
+        while !scanner.isReady && ContinuousClock.now - start < .seconds(5) { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(scanner.isReady)
+    }
+
+    private func layout(_ source: GaugeSource) -> GaugeLayout {
+        var layout = GaugeLayout.standard
+        layout.count = 1
+        layout.slots[0].source = source
+        return layout
+    }
+
+    @Test func oldProfilesBecomeNewOnesWithACopyOfTheGlobalLayoutAndRanges() async throws {
+        let defaults = freshDefaults()
+        // Saved the old way: cars by VIN, one global layout, one set of ranges.
+        let old = #"{"\#(SimulatedAdapter.fakeVIN)":{"vin":"\#(SimulatedAdapter.fakeVIN)","make":"BMW","model":"M135i"}}"#
+        defaults.set(Data(old.utf8), forKey: "carProfiles")
+        let globalLayout = layout(.boost)
+        let redline = GaugeRange(min: 0, max: 8000, normalLow: 0, normalHigh: 6500, redline: 7000)
+        defaults.set(try JSONEncoder().encode(globalLayout), forKey: "gauge.layout")
+        defaults.set(try JSONEncoder().encode(["0C": redline]), forKey: "gauge.ranges")
+
+        let profiles = CarProfiles(defaults: defaults)
+        let car = try #require(profiles.all.first)
+        #expect(profiles.all.count == 1)
+        #expect(car.vin == SimulatedAdapter.fakeVIN)
+        #expect(car.name == "BMW M135i")
+        #expect(car.layout == globalLayout)
+        #expect(car.range(for: .sensor(.rpm)) == redline)
+        #expect(car.range(for: .sensor(.coolantTemp)) == .standard(for: .coolantTemp))
+        #expect(profiles.active == car)
+        // The old keys are kept, only no longer used.
+        #expect(defaults.data(forKey: "carProfiles") != nil)
+        #expect(defaults.data(forKey: "gauge.layout") != nil)
+        #expect(defaults.data(forKey: "gauge.ranges") != nil)
+
+        // Migrated once: the next launch reads the new storage (same id), even if the old keys change.
+        defaults.set(try JSONEncoder().encode(GaugeLayout.standard), forKey: "gauge.layout")
+        #expect(CarProfiles(defaults: defaults).all == [car])
+
+        // And the connection recognises the car by its VIN.
+        let scanner = BluetoothScanner(defaults: defaults)
+        await scanner.useSimulatedAdapter()
+        #expect(!scanner.needsCarInfo)
+        #expect(scanner.car == car)
+        #expect(scanner.layout == globalLayout)
+    }
+
+    @Test func nothingSavedBeforeMeansNoCars() {
+        #expect(CarProfiles(defaults: freshDefaults()).all.isEmpty)
+    }
+
+    @Test func eachCarKeepsItsOwnRangesAndLayout() throws {
+        let profiles = CarProfiles(defaults: freshDefaults())
+        let a = try #require(profiles.add(make: "BMW", model: "M135i"))
+        let b = try #require(profiles.add(make: "Mazda", model: "MX-5"))
+        #expect(a.ranges.isEmpty && a.layout == .standard) // a new car starts with the defaults
+
+        var problem: String?
+        let typed = GaugeRange(min: 0, max: 8000, normalLow: 0, normalHigh: 6500, redline: 7200)
+        profiles.update(a.id) {
+            problem = $0.saveRange(typed: typed, for: .sensor(.rpm), units: Units())
+            $0.layout.count = 2
+        }
+        #expect(problem == nil)
+        #expect(profiles.profile(id: a.id)?.range(for: .sensor(.rpm)).redline == 7200)
+        #expect(profiles.profile(id: b.id)?.range(for: .sensor(.rpm)) == .standard(for: .rpm))
+        #expect(profiles.profile(id: b.id)?.layout == .standard)
+    }
+
+    @Test func aNewVINCanBeLinkedToACarCreatedByHand() async throws {
+        let defaults = freshDefaults()
+        let byHand = try #require(CarProfiles(defaults: defaults).add(make: "BMW", model: "M135i"))
+        #expect(byHand.vin == nil)
+
+        let scanner = BluetoothScanner(defaults: defaults)
+        await scanner.useSimulatedAdapter()
+        #expect(scanner.needsCarInfo) // the VIN is new, so it asks
+        scanner.linkCar(byHand.id)
+        #expect(!scanner.needsCarInfo)
+        #expect(scanner.car?.id == byHand.id)
+        #expect(scanner.profiles.profile(id: byHand.id)?.vin == SimulatedAdapter.fakeVIN)
+        #expect(scanner.profiles.all.count == 1) // linked, not a second car
+        #expect(!scanner.log.contains { $0.contains(SimulatedAdapter.fakeVIN) })
+
+        // The next connection knows it.
+        scanner.disconnect()
+        scanner.connect()
+        try await waitReady(scanner)
+        #expect(!scanner.needsCarInfo)
+        #expect(scanner.carName == "BMW M135i")
+
+        // A car that already has a VIN is not linked again.
+        let other = try #require(scanner.profiles.add(make: "Mazda", model: "MX-5", vin: "OTHERVIN000000002"))
+        scanner.linkCar(other.id)
+        #expect(scanner.profiles.profile(id: other.id)?.vin == "OTHERVIN000000002")
+    }
+
+    @Test func theActiveCarIsTheConnectedOneElseTheLastUsed() async throws {
+        let defaults = freshDefaults()
+        let saved = CarProfiles(defaults: defaults)
+        let byHand = try #require(saved.add(make: "Mazda", model: "MX-5"))
+        let linked = try #require(saved.add(make: "BMW", model: "M135i", vin: SimulatedAdapter.fakeVIN))
+        saved.use(byHand.id)
+
+        let scanner = BluetoothScanner(defaults: defaults)
+        #expect(scanner.profiles.active?.id == byHand.id) // not connected: the last used
+        await scanner.useSimulatedAdapter()
+        #expect(scanner.profiles.active?.id == linked.id) // connected: the car with this VIN
+        scanner.disconnect()
+        #expect(scanner.profiles.active?.id == linked.id) // disconnected: still the last used
+        scanner.profiles.use(byHand.id) // "Use this car"
+        #expect(scanner.profiles.active?.id == byHand.id)
+        #expect(CarProfiles(defaults: defaults).active?.id == byHand.id) // kept after a relaunch
+
+        // The last used car deleted: the first one left.
+        scanner.deleteCar(byHand.id)
+        #expect(scanner.profiles.active?.id == linked.id)
+    }
+
+    @Test func theConnectedCarCannotBeDeleted() async throws {
+        let defaults = freshDefaults()
+        let saved = CarProfiles(defaults: defaults)
+        let linked = try #require(saved.add(make: "BMW", model: "M135i", vin: SimulatedAdapter.fakeVIN))
+        let other = try #require(saved.add(make: "Mazda", model: "MX-5"))
+
+        let scanner = BluetoothScanner(defaults: defaults)
+        await scanner.useSimulatedAdapter()
+        #expect(scanner.connectedCarID == linked.id)
+        scanner.deleteCar(linked.id)
+        #expect(scanner.profiles.profile(id: linked.id) != nil)
+        scanner.deleteCar(other.id) // another car can go
+        #expect(scanner.profiles.profile(id: other.id) == nil)
+
+        scanner.disconnect()
+        #expect(scanner.connectedCarID == nil)
+        scanner.deleteCar(linked.id)
+        #expect(scanner.profiles.all.isEmpty)
+    }
+
+    @Test func pollingFollowsTheActiveCarsLayout() async throws {
+        let defaults = freshDefaults()
+        let saved = CarProfiles(defaults: defaults)
+        let byHand = try #require(saved.add(make: "Mazda", model: "MX-5"))
+        let linked = try #require(saved.add(make: "BMW", model: "M135i", vin: SimulatedAdapter.fakeVIN))
+        saved.update(byHand.id) { $0.layout = layout(.sensor(.rpm)) }
+        saved.update(linked.id) { $0.layout = layout(.sensor(.coolantTemp)) }
+        saved.use(byHand.id)
+
+        let scanner = BluetoothScanner(defaults: defaults)
+        #expect(scanner.sensorsToPoll == [.rpm])
+        let simulated = await scanner.useSimulatedAdapter() // the VIN picks the BMW
+        simulated.noDataChance = 0
+        #expect(scanner.sensorsToPoll == [.coolantTemp])
+
+        let before = simulated.received.count
+        scanner.startPolling()
+        let start = ContinuousClock.now
+        while scanner.liveData.value(for: .coolantTemp) == nil && ContinuousClock.now - start < .seconds(5) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        scanner.stopPolling()
+        let asked = simulated.received.dropFirst(before)
+        #expect(asked.contains("0105\r"))
+        #expect(!asked.contains("010C\r"))
+
+        scanner.disconnect()
+        scanner.profiles.use(byHand.id)
+        #expect(scanner.sensorsToPoll == [.rpm])
+    }
+
+    @Test func theVINShowsOnlyItsLastFourCharacters() {
+        let car = CarProfile(vin: SimulatedAdapter.fakeVIN, make: "BMW", model: "M135i")
+        #expect(car.vinLabel == "VIN •••• 0001")
+        #expect(!car.vinLabel.contains("TESTVIN"))
+        #expect(CarProfile(make: "BMW", model: "M135i").vinLabel == "Not linked yet")
+    }
+}
+
 @MainActor
 struct VINStaysOutOfTheLogTests {
     // Hex of the fake VIN's first bytes ("TES"), as they would appear in a log line.
