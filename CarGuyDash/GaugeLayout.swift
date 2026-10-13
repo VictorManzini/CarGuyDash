@@ -40,6 +40,14 @@ nonisolated enum GaugeSource: Hashable, Codable, RawRepresentable {
     /// Every sensor of the enum (all of them are numbers), then the boost.
     static let all: [GaugeSource] = Sensor.allCases.map { .sensor($0) } + [.boost]
 
+    /// Display only, for the pickers and lists: the favorites first, in this order, then every other source by name (case-insensitive).
+    /// `all` and `Sensor.allCases` keep their order: other code depends on it.
+    static let menuOrder: [GaugeSource] = {
+        let favorites: [GaugeSource] = [.sensor(.rpm), .sensor(.coolantTemp), .sensor(.oilTemp), .sensor(.speed), .boost, .sensor(.moduleVoltage)]
+        let rest = all.filter { !favorites.contains($0) }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return favorites + rest
+    }()
+
     /// The sensor that is polled and gives the unit and the decimals: the boost uses the manifold pressure.
     var sensor: Sensor {
         switch self {

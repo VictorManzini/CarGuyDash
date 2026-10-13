@@ -30,7 +30,8 @@ struct GaugePreviewView: View {
                 }
 
                 Picker("Sensor", selection: $sensor) {
-                    ForEach(Sensor.allCases, id: \.self) { Text($0.name) }
+                    // Same order as the other menus; Boost is not a sensor, so it is skipped.
+                    ForEach(GaugeSource.menuOrder.compactMap { if case .sensor(let sensor) = $0 { sensor } else { nil } }, id: \.self) { Text($0.name) }
                 }
                 Slider(value: $value, in: range.min...range.max)
                 HStack {
