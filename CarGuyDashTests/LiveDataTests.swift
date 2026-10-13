@@ -62,10 +62,32 @@ struct LiveDataTests {
 
     @Test func noDataLeavesEverySensorNA() async throws {
         // Wait until the last sensor of the cycle was asked for.
-        let scanner = try await poll(noDataChance: 1) { _, simulated in simulated.received.contains("01421\r") }
+        let scanner = try await poll(noDataChance: 1) { _, simulated in simulated.received.contains("0142\r") }
         for sensor in scanner.sensorsToPoll {
             #expect(scanner.liveData.value(for: sensor) == nil, "\(sensor)")
         }
+    }
+
+    @Test func unreadableAnswersAreLoggedRawAtMostEvery10Seconds() {
+        let scanner = BluetoothScanner()
+        var clock = Date(timeIntervalSince1970: 0)
+        scanner.liveData.now = { clock }
+        func lines() -> [String] { scanner.log.filter { $0.contains("No value from") } }
+
+        scanner.logUnreadable("NO DATA\r\r>", for: .rpm)
+        #expect(lines().last?.hasSuffix(#"No value from 010C: "NO DATA\r\r>""#) == true)
+        clock += 9
+        scanner.logUnreadable("NO DATA\r\r>", for: .rpm)
+        #expect(lines().count == 1) // same sensor within 10 s: skipped
+        scanner.logUnreadable("?\r\r>", for: .oilTemp)
+        #expect(lines().count == 2) // another sensor has its own 10 s
+        clock += 1
+        scanner.logUnreadable("NO DATA\r\r>", for: .rpm)
+        #expect(lines().count == 3)
+        clock += 10
+        scanner.logUnreadable("7E81014490201574241\r\r>", for: .rpm)
+        #expect(lines().count == 3) // the VIN never reaches the log
+        #expect(!scanner.log.contains { $0.contains("490201") })
     }
 
     @Test func pollingStops() async throws {

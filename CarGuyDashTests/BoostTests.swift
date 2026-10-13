@@ -65,7 +65,7 @@ struct BoostTests {
         let simulated = await scanner.useSimulatedAdapter()
         var clock = Date(timeIntervalSince1970: 0)
         scanner.liveData.now = { clock }
-        func asked() -> Int { simulated.received.filter { $0 == "01331\r" }.count }
+        func asked() -> Int { simulated.received.filter { $0 == "0133\r" }.count }
 
         await scanner.pollBarometricPressureIfDue()
         #expect(asked() == 1)
@@ -84,16 +84,16 @@ struct BoostTests {
         simulated.noDataChance = 0
         scanner.startPolling()
         let start = ContinuousClock.now
-        // The last sensor of the cycle (0142, with the response count) asked 3 times = 3 laps.
-        while simulated.received.filter({ $0 == "01421\r" }).count < 3 && ContinuousClock.now - start < .seconds(10) {
+        // The last sensor of the cycle (0142) asked 3 times = 3 laps.
+        while simulated.received.filter({ $0 == "0142\r" }).count < 3 && ContinuousClock.now - start < .seconds(10) {
             try? await Task.sleep(for: .milliseconds(50))
         }
         scanner.stopPolling()
-        #expect(simulated.received.filter { $0 == "01421\r" }.count >= 3)
-        #expect(simulated.received.filter { $0 == "01331\r" }.count == 1)
+        #expect(simulated.received.filter { $0 == "0142\r" }.count >= 3)
+        #expect(simulated.received.filter { $0 == "0133\r" }.count == 1)
         // Asked before the first Dashboard sensor (RPM).
         let order = simulated.received
-        #expect(try #require(order.firstIndex(of: "01331\r")) < (try #require(order.firstIndex(of: "010C1\r"))))
+        #expect(try #require(order.firstIndex(of: "0133\r")) < (try #require(order.firstIndex(of: "010C\r"))))
         // Simulated car: manifold 88...190 kPa minus atmospheric 93 kPa.
         #expect((-5...97).contains(try #require(scanner.liveData.boost)))
     }

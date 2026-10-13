@@ -19,7 +19,7 @@ struct SimulatedAdapterTests {
         ]
         for (sensor, value) in expected {
             let result = try #require(await scanner.run("01" + sensor.rawValue))
-            #expect(!result.response.contains("7E9"), "\(sensor)") // ATSH7E0 in setup: only the engine ECU answers
+            #expect(result.response.contains("7E9"), "\(sensor)")
             #expect(sensor.value(from: result.response) == value, "\(sensor)")
         }
         for _ in 0..<20 {
@@ -62,40 +62,12 @@ struct SimulatedAdapterTests {
         #expect(Sensor.oilTemp.value(from: result.response) == nil)
     }
 
-    @Test func withTheEngineHeaderPollingAddsTheResponseCount() async throws {
-        let (scanner, simulated) = await connect()
-        #expect(scanner.engineOnly)
-        #expect(scanner.request(.rpm) == "010C1")
-        let result = try #require(await scanner.run(scanner.request(.rpm)))
-        #expect(!result.response.contains("7E9"))
-        #expect(Sensor.rpm.value(from: result.response) != nil)
-        #expect(simulated.received.last == "010C1\r")
-    }
-
-    /// An adapter that answers "?" to ATSH7E0: logged, and polling asks as before (no count, both ECUs answer).
-    @Test func aRejectedHeaderKeepsTheOldRequests() async throws {
-        let (scanner, simulated) = await connect()
-        simulated.rejectedCommands = ["ATSH7E0", "ATAT2"]
-        scanner.disconnect()
-        scanner.connect()
-        let start = ContinuousClock.now
-        while !scanner.isReady && ContinuousClock.now - start < .seconds(5) { try await Task.sleep(for: .milliseconds(20)) }
-        #expect(scanner.isReady)
-        #expect(!scanner.engineOnly)
-        #expect(scanner.request(.rpm) == "010C")
-        #expect(scanner.log.contains { $0.hasSuffix("ATSH7E0 not accepted, keeping the old behavior") })
-        #expect(scanner.log.contains { $0.hasSuffix("ATAT2 not accepted, keeping the old behavior") })
-        let result = try #require(await scanner.run(scanner.request(.rpm)))
-        #expect(result.response.contains("7E9"))
-        #expect(Sensor.rpm.value(from: result.response) != nil)
-    }
-
     @Test func blockedCommandsNeverReachTheSimulator() async {
         let (scanner, simulated) = await connect()
-        // Only the setup commands, the VIN request, the supported-PID blocks and the engine-only settings got there so far.
-        let beforeBlocked = (BluetoothScanner.setupCommands + ["0902", "0100", "0120", "0140", "0160", "ATAT2", "ATSH7E0"]).map { $0 + "\r" }
+        // Only the setup commands, the VIN request and the supported-PID blocks got there so far.
+        let beforeBlocked = (BluetoothScanner.setupCommands + ["0902", "0100", "0120", "0140", "0160"]).map { $0 + "\r" }
         #expect(simulated.received == beforeBlocked)
-        for command in ["04", "0400", "ATPP 0C SV 01", "ATSH 7DF", "010C\r04"] {
+        for command in ["04", "0400", "ATPP 0C SV 01", "ATSH 7E0", "010C\r04"] {
             #expect(await scanner.run(command) == nil, "\(command.debugDescription)")
         }
         // An allowed command does get there, normalized; none of the blocked ones did.

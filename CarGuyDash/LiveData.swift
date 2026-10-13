@@ -70,8 +70,23 @@ extension BluetoothScanner {
         guard supportedPIDs?.contains(0x33) ?? true,
               baroAskedAt.map({ now.timeIntervalSince($0) >= Self.barometricEvery }) ?? true else { return }
         baroAskedAt = now
-        let result = await run(request(.barometricPressure), timeout: .seconds(1))
-        liveData.record(result.flatMap { Sensor.barometricPressure.value(from: $0.response) }, for: .barometricPressure)
+        let result = await run("01" + Sensor.barometricPressure.rawValue, timeout: .seconds(1))
+        let value = result.flatMap { Sensor.barometricPressure.value(from: $0.response) }
+        if let result, value == nil { logUnreadable(result.response, for: .barometricPressure) }
+        liveData.record(value, for: .barometricPressure)
+    }
+
+    /// How often one sensor's unreadable answer may be logged, so a car answering "NO DATA" does not flood the log.
+    static let unreadableLogEvery: TimeInterval = 10
+
+    /// Logs the raw answer that gave no valid value (e.g. "NO DATA"), at most once per sensor every `unreadableLogEvery`.
+    /// An answer with "490201" (the VIN) is never logged. Timeouts are already logged by `run`.
+    func logUnreadable(_ response: String, for sensor: Sensor) {
+        let now = liveData.now()
+        guard !response.contains("490201"),
+              unreadableLoggedAt[sensor].map({ now.timeIntervalSince($0) >= Self.unreadableLogEvery }) ?? true else { return }
+        unreadableLoggedAt[sensor] = now
+        addLog("No value from 01\(sensor.rawValue): \(response.debugDescription)")
     }
 
     var isPolling: Bool { pollingTask != nil }
@@ -106,10 +121,11 @@ extension BluetoothScanner {
                 await pollBarometricPressureIfDue()
                 for sensor in Self.pollOrder(sensors) where !Task.isCancelled && isReady {
                     // Short timeout: a sensor that does not answer must not hold up the others.
-                    let result = await run(request(sensor), timeout: .seconds(1))
+                    let result = await run("01" + sensor.rawValue, timeout: .seconds(1))
                     let value = result.flatMap { sensor.value(from: $0.response) }
                     if let result { meter.time(result.ms) }
                     if value != nil { meter.record(sensor) }
+                    if let result, value == nil { logUnreadable(result.response, for: sensor) }
                     noteReading(valid: value != nil)
                     liveData.record(value, for: sensor)
                 }

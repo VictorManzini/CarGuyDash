@@ -70,8 +70,8 @@ struct SupportedSensorsTests {
         let before = simulated.received.count
         try await pollOneCycle(scanner)
         let asked = simulated.received.dropFirst(before)
-        #expect(!asked.contains("015C1\r"))
-        #expect(asked.contains("010C1\r")) // the others are still read
+        #expect(!asked.contains("015C\r"))
+        #expect(asked.contains("010C\r")) // the others are still read
         #expect(lastValue(scanner, .oilTemp) == nil)
         #expect(lastValue(scanner, .coolantTemp) == 69)
         #expect(gaugeText(for: .oilTemp, state: scanner.state, value: nil) == "N/A")
@@ -112,11 +112,11 @@ struct SupportedSensorsTests {
 
         scanner.profiles.update(car) { $0.layout.slots[0].source = .sensor(.rpm) }
         let start = ContinuousClock.now
-        while !simulated.received.contains("010C1\r") && ContinuousClock.now - start < .seconds(3) {
+        while !simulated.received.contains("010C\r") && ContinuousClock.now - start < .seconds(3) {
             try await Task.sleep(for: .milliseconds(20))
         }
         scanner.stopPolling()
-        #expect(simulated.received.contains("010C1\r"))
-        #expect(!simulated.received.contains("015C1\r"))
+        #expect(simulated.received.contains("010C\r"))
+        #expect(!simulated.received.contains("015C\r"))
     }
 }
