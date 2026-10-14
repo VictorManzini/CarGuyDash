@@ -89,22 +89,6 @@ nonisolated struct GaugeRange: Equatable {
         return nil
     }
 
-    init(min: Double, max: Double, target: Double? = nil, rpm: RPMZones? = nil) {
-        self.min = min
-        self.max = max
-        self.target = target
-        self.rpm = rpm
-    }
-
-    // Temporary: the range editor still types five values; it moves to min, target and max next.
-    init(min: Double, max: Double, normalLow: Double, normalHigh: Double, redline: Double) {
-        self.init(min: min, max: max, rpm: RPMZones(normalLow: normalLow, normalHigh: normalHigh, redline: redline))
-    }
-
-    var normalLow: Double { rpm?.normalLow ?? target ?? min }
-    var normalHigh: Double { rpm?.normalHigh ?? target ?? max }
-    var redline: Double { rpm?.redline ?? max }
-
     /// Where `value` sits on the scale: 0 = min, 1 = max, clamped.
     func fraction(_ value: Double) -> Double {
         guard max > min else { return 0 }

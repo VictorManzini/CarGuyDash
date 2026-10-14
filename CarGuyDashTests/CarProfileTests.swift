@@ -135,7 +135,7 @@ struct CarProfilesTests {
         let old = #"{"\#(SimulatedAdapter.fakeVIN)":{"vin":"\#(SimulatedAdapter.fakeVIN)","make":"BMW","model":"M135i"}}"#
         defaults.set(Data(old.utf8), forKey: "carProfiles")
         let globalLayout = layout(.boost)
-        let redline = GaugeRange(min: 0, max: 8000, normalLow: 0, normalHigh: 6500, redline: 7000)
+        let redline = GaugeRange(min: 0, max: 8000, rpm: RPMZones(normalLow: 0, normalHigh: 6500, redline: 7000))
         defaults.set(try JSONEncoder().encode(globalLayout), forKey: "gauge.layout")
         defaults.set(try JSONEncoder().encode(["0C": redline]), forKey: "gauge.ranges")
 
@@ -237,13 +237,13 @@ struct CarProfilesTests {
         #expect(a.ranges.isEmpty && a.layout == .standard) // a new car starts with the defaults
 
         var problem: String?
-        let typed = GaugeRange(min: 0, max: 8000, normalLow: 0, normalHigh: 6500, redline: 7200)
+        let typed = GaugeRange(min: 0, max: 8000, rpm: RPMZones(normalLow: 0, normalHigh: 6500, redline: 7200))
         profiles.update(a.id) {
             problem = $0.saveRange(typed: typed, for: .sensor(.rpm), units: Units())
             $0.layout.count = 2
         }
         #expect(problem == nil)
-        #expect(profiles.profile(id: a.id)?.range(for: .sensor(.rpm)).redline == 7200)
+        #expect(profiles.profile(id: a.id)?.range(for: .sensor(.rpm)).rpm?.redline == 7200)
         #expect(profiles.profile(id: b.id)?.range(for: .sensor(.rpm)) == .standard(for: .rpm))
         #expect(profiles.profile(id: b.id)?.layout == .standard)
     }

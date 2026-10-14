@@ -4,7 +4,7 @@ import Testing
 
 struct GaugeRangeTests {
     /// The coolant band saved before targets (five values).
-    private let oldCoolant = GaugeRange(min: 40, max: 130, normalLow: 90, normalHigh: 105, redline: 115)
+    private let oldCoolant = GaugeRange(min: 40, max: 130, rpm: RPMZones(normalLow: 90, normalHigh: 105, redline: 115))
 
     @Test func coolantColorsFollowTheTarget() {
         let range = GaugeRange.standard(for: .coolantTemp) // 40 / 95 / 115
@@ -117,7 +117,7 @@ struct GaugeRangeTests {
 
         let car = try #require(CarProfiles(defaults: defaults).add(make: "BMW", model: "M135i"))
         #expect(car.range(for: .sensor(.rpm)) == .standard(for: .rpm))
-        let custom = GaugeRange(min: 0, max: 8000, normalLow: 0, normalHigh: 6500, redline: 7000)
+        let custom = GaugeRange(min: 0, max: 8000, rpm: RPMZones(normalLow: 0, normalHigh: 6500, redline: 7000))
         CarProfiles(defaults: defaults).update(car.id) { $0.ranges["0C"] = custom }
         // A new object reading the same storage = the app opened again.
         let reopened = try #require(CarProfiles(defaults: defaults).profile(id: car.id))
@@ -157,17 +157,17 @@ struct GaugeRangeTests {
 
     @Test func oldRangesAreFittedToTheirSource() {
         // RPM keeps its five values as they were.
-        let oldRPM = GaugeRange(min: 0, max: 8000, normalLow: 0, normalHigh: 6500, redline: 7000)
+        let oldRPM = GaugeRange(min: 0, max: 8000, rpm: RPMZones(normalLow: 0, normalHigh: 6500, redline: 7000))
         #expect(oldRPM.fitted(to: .sensor(.rpm)) == oldRPM)
         // Another source: max = the old redline, target = the middle of the old normal band.
         #expect(oldCoolant.fitted(to: .sensor(.coolantTemp)) == GaugeRange(min: 40, max: 115, target: 97.5))
-        let oldBoost = GaugeRange(min: -100, max: 150, normalLow: -100, normalHigh: 100, redline: 125)
+        let oldBoost = GaugeRange(min: -100, max: 150, rpm: RPMZones(normalLow: -100, normalHigh: 100, redline: 125))
         #expect(oldBoost.fitted(to: .boost) == GaugeRange(min: -100, max: 125, target: 0))
         // The old band was the whole scale (all green): no target.
-        let oldOil = GaugeRange(min: -40, max: 215, normalLow: -40, normalHigh: 215, redline: 215)
+        let oldOil = GaugeRange(min: -40, max: 215, rpm: RPMZones(normalLow: -40, normalHigh: 215, redline: 215))
         #expect(oldOil.fitted(to: .sensor(.oilTemp)) == GaugeRange(min: -40, max: 215))
         // A redline at the min would leave no scale: the old max stays.
-        let flat = GaugeRange(min: 0, max: 100, normalLow: 0, normalHigh: 0, redline: 0)
+        let flat = GaugeRange(min: 0, max: 100, rpm: RPMZones(normalLow: 0, normalHigh: 0, redline: 0))
         #expect(flat.fitted(to: .sensor(.speed)) == GaugeRange(min: 0, max: 100, target: 0))
         // Each source keeps only its own kind: no target on RPM (default zones if missing), no zones elsewhere.
         #expect(GaugeRange(min: 0, max: 8000, target: 3000).fitted(to: .sensor(.rpm))

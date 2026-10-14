@@ -16,6 +16,8 @@ struct DashboardView: View {
     /// Screenshots: `-openSettings YES` and `-openTests YES` open those screens directly.
     @State private var openSettings = UserDefaults.standard.bool(forKey: "openSettings")
     @State private var openTests = UserDefaults.standard.bool(forKey: "openTests")
+    /// Screenshots: `-openSensorRange 05` opens the active car's range editor for that source (PID or "boost").
+    @State private var openSensorRange = UserDefaults.standard.string(forKey: "openSensorRange").flatMap(GaugeSource.init(rawValue:))
     #endif
 
     /// Landscape iPhones are short, so the page buttons sit in two columns there.
@@ -67,6 +69,11 @@ struct DashboardView: View {
                 GaugeLayoutEditor(units: unitSettings.units, profiles: scanner.profiles, carID: car.id)
             } else {
                 ContentUnavailableView("No cars yet", systemImage: "car")
+            }
+        }
+        .navigationDestination(item: $openSensorRange) { source in
+            if let car = scanner.profiles.active {
+                SensorRangeEditor(source: source, units: unitSettings.units, profiles: scanner.profiles, carID: car.id)
             }
         }
         #endif
