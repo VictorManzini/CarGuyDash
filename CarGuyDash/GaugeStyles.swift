@@ -47,6 +47,12 @@ enum GaugeLook {
     /// The value text size every Digital, Bar and Arc gauge of one grid shares, from the cell's size:
     /// a fifth of the cell's smaller side once the name line (about 24 pt with its gap) is taken off.
     static func valueSize(cell: CGSize) -> CGFloat { max(0, min(cell.width, cell.height - 24)) * 0.2 }
+
+    /// In a grid the Digital's number may outgrow the shared size, up to this many times it.
+    static let digitalGrowth: CGFloat = 1.5
+
+    /// The Digital's number size in a grid: its own preferred size, never below the shared size, never above `digitalGrowth` times it.
+    static func digitalSize(preferred: CGFloat, grid: CGFloat) -> CGFloat { max(grid, min(preferred, grid * digitalGrowth)) }
 }
 
 private struct GaugeValueSizeKey: EnvironmentKey {
@@ -289,21 +295,24 @@ private struct GaugeCell<Content: View>: View {
 }
 
 /// Number and unit as one text in the look's DIN font, so they share one baseline and shrink together.
-/// White, red from the redline. "Stand By" / "N/A" replace both, in grey. Inside a `GaugeGrid` the grid's size wins over `preferredSize`.
+/// White, red from the redline. "Stand By" / "N/A" replace both, in grey. Inside a `GaugeGrid` the grid's size wins over `preferredSize`,
+/// except with `growsInGrid` (the Digital), which may grow up to `GaugeLook.digitalSize`.
 private struct GaugeValue: View {
     let reading: GaugeReading
     let finish: GaugeFinish
     let preferredSize: CGFloat
+    let growsInGrid: Bool
     @Environment(\.gaugeValueSize) private var gridSize
 
-    init(reading: GaugeReading, finish: GaugeFinish, size: CGFloat) {
+    init(reading: GaugeReading, finish: GaugeFinish, size: CGFloat, growsInGrid: Bool = false) {
         self.reading = reading
         self.finish = finish
         preferredSize = size
+        self.growsInGrid = growsInGrid
     }
 
     var body: some View {
-        let size = gridSize ?? preferredSize
+        let size = gridSize.map { growsInGrid ? GaugeLook.digitalSize(preferred: preferredSize, grid: $0) : $0 } ?? preferredSize
         Group {
             if reading.number == nil {
                 Text(reading.text).font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(GaugeLook.secondary)
@@ -522,7 +531,7 @@ struct DigitalGauge: View {
                         dome.addLine(to: CGPoint(x: face.minX + face.width * 0.3, y: face.minY + face.height * 0.12))
                         drawGlass(spec, clip: housing.facePath, top: face.minY, middle: face.midY, in: &context, dome: dome, size: side)
                     }
-                    GaugeValue(reading: reading, finish: finish, size: min(housing.face.width * 0.3, housing.face.height * 0.5))
+                    GaugeValue(reading: reading, finish: finish, size: min(housing.face.width * 0.3, housing.face.height * 0.5), growsInGrid: true)
                         .frame(width: housing.face.width * 0.9)
                 }
                 .frame(width: size.width, height: size.height)
