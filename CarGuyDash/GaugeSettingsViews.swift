@@ -76,11 +76,12 @@ struct GaugeLayoutEditor: View {
         }
     }
 
-    /// The gauge with the middle of this car's normal range for its source (RPM 3000, coolant ~97 °C by default). No live data.
+    /// The gauge at a sample value from this car's range: RPM the middle of its normal band (3000 by default),
+    /// the others their target (coolant 95 °C by default) or, without one, the middle of the scale. No live data.
     private func gauge(_ slot: GaugeSlot) -> some View {
         let source = slot.source
         let range = profiles.profile(id: carID)?.range(for: source) ?? .standard(for: source)
-        let value = (range.normalLow + range.normalHigh) / 2
+        let value = range.rpm.map { ($0.normalLow + $0.normalHigh) / 2 } ?? range.target ?? (range.min + range.max) / 2
         let reading = GaugeReading(sensor: source.sensor, text: source.sensor.text(for: value, units: units), value: value,
                                    range: range, units: units, name: source.name)
         return StyledGauge(style: slot.style, finish: slot.look, reading: reading)
@@ -104,17 +105,19 @@ struct SensorRangesView: View {
 
 /// One source's range in one car, typed in the chosen units. Save checks the order and converts back to the internal unit;
 /// an invalid range is not saved and the reason shows below the buttons.
+/// RPM: min, normal low, normal high, redline, max. Every other source: min, target (may be left empty = all green), max.
 struct SensorRangeEditor: View {
     let source: GaugeSource
     let units: Units
     let profiles: CarProfiles
     let carID: UUID
-    /// Min, normal low, normal high, redline, max, as typed.
+    /// The fields as typed, in the order of `titles`.
     @State private var texts: [String]
     @State private var message: String?
     @State private var messageIsProblem = false
 
-    private static let titles = ["Min", "Normal low", "Normal high", "Redline", "Max"]
+    private var isRPM: Bool { source == .sensor(.rpm) }
+    private var titles: [String] { isRPM ? ["Min", "Normal low", "Normal high", "Redline", "Max"] : ["Min", "Target", "Max"] }
 
     init(source: GaugeSource, units: Units, profiles: CarProfiles, carID: UUID) {
         self.source = source
@@ -128,16 +131,18 @@ struct SensorRangeEditor: View {
         let unit = source.sensor.displayUnit(units)
         Form {
             Section {
-                ForEach(Self.titles.indices, id: \.self) { index in
-                    LabeledContent(Self.titles[index]) {
+                ForEach(titles.indices, id: \.self) { index in
+                    LabeledContent(titles[index]) {
                         // Not the decimal pad: it has no minus key (Boost and temperatures go below zero).
-                        TextField(Self.titles[index], text: $texts[index])
+                        TextField(!isRPM && index == 1 ? "None" : titles[index], text: $texts[index])
                             .keyboardType(.numbersAndPunctuation)
                             .multilineTextAlignment(.trailing)
                     }
                 }
             } header: {
                 if !unit.isEmpty { Text("In \(unit)") }
+            } footer: {
+                if !isRPM { Text("Leave Target empty for all green.") }
             }
             Section {
                 Button("Save", action: save)
@@ -155,9 +160,21 @@ struct SensorRangeEditor: View {
     }
 
     private func save() {
-        let values = texts.compactMap { try? Double($0.trimmingCharacters(in: .whitespaces), format: .number) }
-        guard values.count == 5 else { return show("Every field needs a number.", problem: true) }
-        let typed = GaugeRange(min: values[0], max: values[4], normalLow: values[1], normalHigh: values[2], redline: values[3])
+        let trimmed = texts.map { $0.trimmingCharacters(in: .whitespaces) }
+        let values = trimmed.map { try? Double($0, format: .number) }
+        let typed: GaugeRange
+        if isRPM {
+            let numbers = values.compactMap { $0 }
+            guard numbers.count == 5 else { return show("Every field needs a number.", problem: true) }
+            typed = GaugeRange(min: numbers[0], max: numbers[4],
+                               rpm: RPMZones(normalLow: numbers[1], normalHigh: numbers[2], redline: numbers[3]))
+        } else {
+            // Only the target may be left empty.
+            guard let min = values[0], let max = values[2], values[1] != nil || trimmed[1].isEmpty else {
+                return show("Min and max need a number; target a number or nothing.", problem: true)
+            }
+            typed = GaugeRange(min: min, max: max, target: values[1])
+        }
         var problem: String?
         profiles.update(carID) { problem = $0.saveRange(typed: typed, for: source, units: units) }
         if let problem {
@@ -172,11 +189,16 @@ struct SensorRangeEditor: View {
         messageIsProblem = problem
     }
 
-    /// The car's range in the chosen units (the default one if the car was deleted meanwhile).
+    /// The car's range in the chosen units (the default one if the car was deleted meanwhile); no target = an empty field.
+    /// Fitted to the source, so RPM always has its zones and nothing else does: the fields match `titles`.
     private static func texts(for source: GaugeSource, _ units: Units, _ car: CarProfile?) -> [String] {
-        let range = (car?.range(for: source) ?? .standard(for: source)).converted(for: source.sensor, units)
-        return [range.min, range.normalLow, range.normalHigh, range.redline, range.max]
-            .map { $0.formatted(.number.precision(.fractionLength(0...2)).grouping(.never)) }
+        let range = (car?.range(for: source) ?? .standard(for: source)).fitted(to: source).converted(for: source.sensor, units)
+        let values: [Double?] = if let rpm = range.rpm {
+            [range.min, rpm.normalLow, rpm.normalHigh, rpm.redline, range.max]
+        } else {
+            [range.min, range.target, range.max]
+        }
+        return values.map { $0?.formatted(.number.precision(.fractionLength(0...2)).grouping(.never)) ?? "" }
     }
 }
 

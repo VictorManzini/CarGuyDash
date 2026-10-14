@@ -13,7 +13,11 @@ nonisolated struct CarProfile: Codable, Equatable, Identifiable {
     /// Only the ranges the user changed; key = the source's raw value (sensor PID, or "boost"). Any other one uses `standard(for:)`.
     var ranges: [String: GaugeRange]
 
+    private enum CodingKeys: String, CodingKey { case id, vin, make, model, layout, ranges }
+
     /// A new car starts with the app's default layout and ranges.
+    /// Each range is fitted to its source (`GaugeRange.fitted(to:)`), so ranges saved before targets come in converted.
+    /// A key that is no source (anymore) is kept as it is.
     init(id: UUID = UUID(), vin: String? = nil, make: String, model: String,
          layout: GaugeLayout = .standard, ranges: [String: GaugeRange] = [:]) {
         self.id = id
@@ -21,7 +25,9 @@ nonisolated struct CarProfile: Codable, Equatable, Identifiable {
         self.make = make
         self.model = model
         self.layout = layout
-        self.ranges = ranges
+        self.ranges = ranges.reduce(into: [:]) { fitted, entry in
+            fitted[entry.key] = GaugeSource(rawValue: entry.key).map { entry.value.fitted(to: $0) } ?? entry.value
+        }
     }
 
     /// "Make Model", as shown on the Dashboard.
@@ -38,7 +44,7 @@ nonisolated struct CarProfile: Codable, Equatable, Identifiable {
     /// Returns why it was not saved (see `GaugeRange.problem`), or nil when it was.
     mutating func saveRange(typed: GaugeRange, for source: GaugeSource, units: Units) -> String? {
         if let problem = typed.problem { return problem }
-        ranges[source.rawValue] = typed.convertedBack(for: source.sensor, units)
+        ranges[source.rawValue] = typed.convertedBack(for: source.sensor, units).fitted(to: source)
         return nil
     }
 
@@ -48,14 +54,29 @@ nonisolated struct CarProfile: Codable, Equatable, Identifiable {
     }
 }
 
+/// Decoded through `init`, so the saved ranges are fitted to their sources too.
+nonisolated extension CarProfile {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(id: container.decode(UUID.self, forKey: .id), vin: container.decodeIfPresent(String.self, forKey: .vin),
+                      make: container.decode(String.self, forKey: .make), model: container.decode(String.self, forKey: .model),
+                      layout: container.decode(GaugeLayout.self, forKey: .layout),
+                      ranges: container.decode([String: GaugeRange].self, forKey: .ranges))
+    }
+}
+
 /// The saved cars, kept only on this iPhone (UserDefaults, as JSON), and which one was used last.
 @Observable final class CarProfiles {
     private(set) var all: [CarProfile] {
         didSet {
-            defaults.set(try? JSONEncoder().encode(all), forKey: Self.key)
+            // Saved cars that could not be read stay untouched: a bug in the app must never wipe them.
+            if loadProblem == nil { defaults.set(try? JSONEncoder().encode(all), forKey: Self.key) }
             onChange?()
         }
     }
+    /// Set when the saved cars exist but could not be read: the app then runs with none and never writes over them.
+    /// The scanner logs it once.
+    @ObservationIgnored private(set) var loadProblem: String?
     /// The car picked by "Use this car" or matched by VIN on the last connection.
     private(set) var lastUsedID: UUID? {
         didSet {
@@ -78,7 +99,12 @@ nonisolated struct CarProfile: Codable, Equatable, Identifiable {
         self.defaults = defaults
         lastUsedID = defaults.string(forKey: Self.lastUsedKey).flatMap(UUID.init)
         if let data = defaults.data(forKey: Self.key) {
-            all = (try? JSONDecoder().decode([CarProfile].self, from: data)) ?? []
+            do {
+                all = try JSONDecoder().decode([CarProfile].self, from: data)
+            } catch {
+                all = []
+                loadProblem = "Saved cars could not be read, left untouched (\(data.count) bytes): \(error)"
+            }
         } else {
             all = Self.migrated(from: defaults)
             defaults.set(try? JSONEncoder().encode(all), forKey: Self.key)
