@@ -3,20 +3,46 @@ import Testing
 @testable import CarGuyDash
 
 struct GaugeRangeTests {
-    /// The old coolant band, as RPM zones: the color code is unchanged until it moves to targets.
+    /// The coolant band saved before targets (five values).
     private let oldCoolant = GaugeRange(min: 40, max: 130, normalLow: 90, normalHigh: 105, redline: 115)
 
-    @Test func coolantColors() {
-        let range = oldCoolant
+    @Test func coolantColorsFollowTheTarget() {
+        let range = GaugeRange.standard(for: .coolantTemp) // 40 / 95 / 115
         #expect(range.color(at: 30) == .blue)  // below the scale
-        #expect(range.color(at: 60) == .blue)  // below normalLow (90)
-        #expect(range.color(at: 90) == .green)
-        #expect(range.color(at: 95) == .green)
-        #expect(range.color(at: 105) == .yellow) // normalHigh
-        #expect(range.color(at: 110) == .orange) // halfway to the redline
+        #expect(range.color(at: 60) == .blue)
+        #expect(range.color(at: 94.9) == .blue)
+        #expect(range.color(at: 95) == .green) // target
+        #expect(range.color(at: 104.9) == .green)
+        #expect(range.color(at: 105) == .yellow) // halfway from the target to max
+        #expect(range.color(at: 110) == .orange) // three quarters of the way
         #expect(range.color(at: 114.9) == .orange)
-        #expect(range.color(at: 115) == .red)    // redline
+        #expect(range.color(at: 115) == .red)    // max
         #expect(range.color(at: 130) == .red)
+    }
+
+    @Test func theGradientIsPureGreenAtTheTargetAndPureRedAtMax() {
+        let range = GaugeRange(min: 0, max: 100, target: 60) // yellow at 80, orange at 90
+        #expect(range.rgb(at: 0) == GaugeColor.blue.rgb)
+        #expect(range.rgb(at: 60) == GaugeColor.green.rgb)
+        #expect(range.rgb(at: 80) == GaugeColor.yellow.rgb)
+        #expect(range.rgb(at: 90) == GaugeColor.orange.rgb)
+        #expect(range.rgb(at: 100) == GaugeColor.red.rgb)
+        #expect(range.rgb(at: 99.9) != GaugeColor.red.rgb)
+        // Smooth between them: halfway from blue to green.
+        let blue = GaugeColor.blue.rgb, green = GaugeColor.green.rgb, middle = range.rgb(at: 30)
+        #expect(abs(middle.r - (blue.r + green.r) / 2) < 1e-9 && abs(middle.g - (blue.g + green.g) / 2) < 1e-9)
+        // A target at the min: no blue.
+        #expect(GaugeRange(min: 0, max: 100, target: 0).stops.first?.color == .green)
+    }
+
+    @Test func noTargetIsAllGreen() {
+        let oil = GaugeRange.standard(for: .oilTemp)
+        #expect(oil.target == nil)
+        #expect(oil.stops.map(\.color) == [.green])
+        for value in [-50.0, -40, 100, 214, 215, 300] {
+            #expect(oil.color(at: value) == .green)
+            #expect(oil.rgb(at: value) == GaugeColor.green.rgb)
+        }
     }
 
     @Test func rpmColorsStartGreen() {
@@ -32,7 +58,7 @@ struct GaugeRangeTests {
     }
 
     @Test func theGradientMixesSmoothlyBetweenStops() {
-        let range = oldCoolant
+        let range = GaugeRange.standard(for: .coolantTemp)
         let yellow = GaugeColor.yellow.rgb, orange = GaugeColor.orange.rgb
         #expect(range.rgb(at: 105) == yellow)
         #expect(range.rgb(at: 110) == orange)
@@ -52,7 +78,7 @@ struct GaugeRangeTests {
         let speed = GaugeRange.standard(for: .speed)
         #expect(speed.color(at: 0) == .green)
         #expect(speed.color(at: 200) == .green)
-        #expect(speed.color(at: 255) == .red) // redline = max
+        #expect(speed.color(at: 255) == .green) // no target: green up to max
     }
 
     @Test func digitalIsRedOnlyFromTheRedline() {
@@ -60,9 +86,12 @@ struct GaugeRangeTests {
             GaugeReading(sensor: sensor, text: text ?? sensor.text(for: value), value: value,
                          range: .standard(for: sensor), units: Units())
         }
-        #expect(!reading(.coolantTemp, 110).isRedline)
+        // Above the target is fine: red only at max.
+        #expect(!reading(.coolantTemp, 100).isRedline)
         #expect(!reading(.coolantTemp, 114.9).isRedline)
         #expect(reading(.coolantTemp, 115).isRedline)
+        #expect(!reading(.oilTemp, 214).isRedline)
+        #expect(reading(.oilTemp, 215).isRedline)
         #expect(!reading(.rpm, 6499).isRedline)
         #expect(reading(.rpm, 6500).isRedline)
         // Stand By / N/A with an old value left over: no number, never red.

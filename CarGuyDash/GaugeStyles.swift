@@ -14,7 +14,8 @@ nonisolated struct GaugeReading {
 
     /// The value to draw; nil while the text is "Stand By" or "N/A" (no needle movement, no fill).
     var number: Double? { text == "Stand By" || text == "N/A" ? nil : value }
-    var isRedline: Bool { number.map { $0 >= range.redline } ?? false }
+    /// Red on the Digital: from RPM's redline, or exactly at max for every other source (above the target is still fine).
+    var isRedline: Bool { number.map { $0 >= range.rpm?.redline ?? range.max } ?? false }
 }
 
 // MARK: - Shared look
@@ -166,12 +167,14 @@ private struct Dial {
     }
 }
 
-/// The zones painted on the analog scale, as fractions: blue below normalLow (when there is one), then GaugeRange's stops
-/// past the normal band: yellow from normalHigh, orange from halfway to the redline, red from the redline to max.
+/// The zones painted on the analog scale for RPM, as fractions: blue below normalLow (when there is one), then GaugeRange's
+/// stops past the normal band: yellow from normalHigh, orange from halfway to the redline, red from the redline to max.
+/// None for the other sources yet.
 private func zones(_ range: GaugeRange) -> [(from: Double, to: Double, color: Color)] {
-    let orange = (range.normalHigh + range.redline) / 2
-    var values: [(Double, Double, GaugeColor)] = range.normalLow > range.min ? [(range.min, range.normalLow, .blue)] : []
-    values += [(range.normalHigh, orange, .yellow), (orange, range.redline, .orange), (range.redline, range.max, .red)]
+    guard let rpm = range.rpm else { return [] }
+    let orange = (rpm.normalHigh + rpm.redline) / 2
+    var values: [(Double, Double, GaugeColor)] = rpm.normalLow > range.min ? [(range.min, rpm.normalLow, .blue)] : []
+    values += [(rpm.normalHigh, orange, .yellow), (orange, rpm.redline, .orange), (rpm.redline, range.max, .red)]
     return values.map { (range.fraction($0.0), range.fraction($0.1), $0.2.color) }.filter { $0.from < $0.to }
 }
 
@@ -295,7 +298,7 @@ private struct GaugeCell<Content: View>: View {
 }
 
 /// Number and unit as one text in the look's DIN font, so they share one baseline and shrink together.
-/// White, red from the redline. "Stand By" / "N/A" replace both, in grey. Inside a `GaugeGrid` the grid's size wins over `preferredSize`,
+/// White, red from the redline (`isRedline`: RPM's redline, max for the others). "Stand By" / "N/A" replace both, in grey. Inside a `GaugeGrid` the grid's size wins over `preferredSize`,
 /// except with `growsInGrid` (the Digital), which may grow up to `GaugeLook.digitalSize`.
 private struct GaugeValue: View {
     let reading: GaugeReading
@@ -486,10 +489,12 @@ private struct ShiftLights: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.125)) { timeline in
-            let flashing = value.map { $0 >= range.redline } ?? false
+            // Only RPM gets shift lights, and RPM always has zones; without them they would light only at max.
+            let normalHigh = range.rpm?.normalHigh ?? range.max, redline = range.rpm?.redline ?? range.max
+            let flashing = value.map { $0 >= redline } ?? false
             let flashOn = Int(timeline.date.timeIntervalSinceReferenceDate * 8) % 2 == 0
-            let span = range.redline - range.normalHigh
-            let lit = value.map { span > 0 ? Int((($0 - range.normalHigh) / span * 10).rounded(.down)) : 0 } ?? 0
+            let span = redline - normalHigh
+            let lit = value.map { span > 0 ? Int((($0 - normalHigh) / span * 10).rounded(.down)) : 0 } ?? 0
             HStack(spacing: GaugeLook.gapSmall) {
                 ForEach(Self.colors.indices, id: \.self) { index in
                     let on = flashing ? flashOn : index < lit
@@ -507,7 +512,7 @@ private struct ShiftLights: View {
 
 // MARK: - Digital
 
-/// Big DIN number: white, red only from the redline, centered in a rectangular frame in the slot's look
+/// Big DIN number: white, red only from the redline (`isRedline`), centered in a rectangular frame in the slot's look
 /// (bezel, recessed face, glass), with the Bar's bezel thickness and corners. The frame takes the whole width
 /// and the round gauges' height (the smaller side), sitting on the bottom like the others.
 struct DigitalGauge: View {

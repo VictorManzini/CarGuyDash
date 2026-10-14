@@ -89,7 +89,6 @@ nonisolated struct GaugeRange: Equatable {
         return nil
     }
 
-    // Temporary: the colors and the range editor still use the five values; they move to target and zones next.
     init(min: Double, max: Double, target: Double? = nil, rpm: RPMZones? = nil) {
         self.min = min
         self.max = max
@@ -97,6 +96,7 @@ nonisolated struct GaugeRange: Equatable {
         self.rpm = rpm
     }
 
+    // Temporary: the range editor still types five values; it moves to min, target and max next.
     init(min: Double, max: Double, normalLow: Double, normalHigh: Double, redline: Double) {
         self.init(min: min, max: max, rpm: RPMZones(normalLow: normalLow, normalHigh: normalHigh, redline: redline))
     }
@@ -111,16 +111,23 @@ nonisolated struct GaugeRange: Equatable {
         return Swift.min(Swift.max((value - min) / (max - min), 0), 1)
     }
 
-    /// Fixed color stops along the scale (0...1), shared by the bar and arc gradients; red from the redline to max.
-    /// No blue when the normal band starts at the minimum (RPM starts green).
+    /// Fixed color stops along the scale (0...1), shared by the bar, arc and LED gradients.
+    /// RPM: blue at min (only when normalLow > min), green at normalLow, yellow at normalHigh, orange halfway to the redline,
+    /// red from the redline to max. Target: blue at min (only when the target is above it), pure green at the target,
+    /// yellow halfway from the target to max, orange three quarters of the way, red exactly at max. No target: all green.
     var stops: [(color: GaugeColor, at: Double)] {
-        let blue: [(color: GaugeColor, at: Double)] = normalLow > min ? [(.blue, 0)] : []
-        return blue + [(.green, fraction(normalLow)), (.yellow, fraction(normalHigh)),
-                       (.orange, fraction((normalHigh + redline) / 2)), (.red, fraction(redline))]
+        if let rpm {
+            let blue: [(color: GaugeColor, at: Double)] = rpm.normalLow > min ? [(.blue, 0)] : []
+            return blue + [(.green, fraction(rpm.normalLow)), (.yellow, fraction(rpm.normalHigh)),
+                           (.orange, fraction((rpm.normalHigh + rpm.redline) / 2)), (.red, fraction(rpm.redline))]
+        }
+        guard let target else { return [(.green, 0)] }
+        let blue: [(color: GaugeColor, at: Double)] = target > min ? [(.blue, 0)] : []
+        return blue + [(.green, fraction(target)), (.yellow, fraction(target + (max - target) / 2)),
+                       (.orange, fraction(target + (max - target) * 3 / 4)), (.red, 1)]
     }
 
-    /// The color of the last stop at or before `value`: blue below normalLow, green in the normal band,
-    /// yellow from normalHigh, orange from halfway to the redline, red from the redline.
+    /// The color of the last stop at or before `value` (see `stops`).
     func color(at value: Double) -> GaugeColor {
         let at = fraction(value)
         return stops.last { $0.at <= at }?.color ?? stops[0].color
