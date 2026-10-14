@@ -35,6 +35,7 @@ Phase 3 tested in the car on 2026-10-13 (auto polling, live gauges, RPM latency)
 - [x] RPM latency: RPM every other request, short needle animation (simulator 1.5 → 4.4 RPM/s; engine-only header + response count removed: 0 readings in the M135i; untested in car)
 - [x] 🚗 Test: RPM latency in the car (RPM/s and ms/command in the log, needle without lag) — passed 2026-10-13
 - [x] Car profiles editable without the car: each car keeps its own gauge layout and ranges, Settings → Cars (add, edit, use, delete), link a new VIN to a car created by hand (untested in car)
+- [x] Target ranges: Min / Target / Max for every source except RPM, gradient blue → green at the target → red at max, old saved ranges converted, saved cars never overwritten when unreadable (checked on the simulator, untested in car)
 - [ ] All-sensors page (Car Scanner style)
 - [x] Settings: units (°C/°F, bar/psi/kPa, km/h/mph) — simple screen from the Dashboard gear button
 - [ ] Check the units on screen (can be done at home with the simulated adapter)
