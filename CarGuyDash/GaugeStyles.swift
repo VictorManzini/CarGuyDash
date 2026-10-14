@@ -169,7 +169,7 @@ private struct Dial {
 
 /// The zones painted on the analog scale for RPM, as fractions: blue below normalLow (when there is one), then GaugeRange's
 /// stops past the normal band: yellow from normalHigh, orange from halfway to the redline, red from the redline to max.
-/// None for the other sources yet.
+/// None for the other sources: with a target they get the whole gradient instead (see `AnalogGauge.draw`).
 private func zones(_ range: GaugeRange) -> [(from: Double, to: Double, color: Color)] {
     guard let rpm = range.rpm else { return [] }
     let orange = (rpm.normalHigh + rpm.redline) / 2
@@ -416,9 +416,16 @@ struct AnalogGauge: View {
         let d = Dial(size)
         let f = drawRoundHousing(spec, d, in: &ctx)
 
-        // Zones as solid bands on the scale's outer edge.
+        // RPM: zones as solid bands on the scale's outer edge. A target: the same place gets the whole gradient, min to max,
+        // turning with the scale like the Arc's (260° of a 360° conic gradient). No target: nothing (all green).
         for zone in zones(range) {
             ctx.stroke(d.arc(zone.from, zone.to, radius: f * 0.9), with: .color(zone.color), lineWidth: f * spec.zoneWidth)
+        }
+        if range.rpm == nil, range.target != nil {
+            ctx.stroke(d.arc(0, 1, radius: f * 0.9),
+                       with: .conicGradient(range.gradient(length: GaugeLook.arcSweep / 360), center: d.center,
+                                            angle: .degrees(GaugeLook.arcStart)),
+                       lineWidth: f * spec.zoneWidth)
         }
 
         // Ticks and numbers in the chosen units.
