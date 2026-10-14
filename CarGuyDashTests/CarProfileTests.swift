@@ -165,6 +165,67 @@ struct CarProfilesTests {
         #expect(scanner.layout == globalLayout)
     }
 
+    @Test func twoCarsSavedBeforeTargetsLoadWithNothingLost() throws {
+        let defaults = freshDefaults()
+        // Exactly as saved before targets: every range with five flat values.
+        let old = #"""
+        [{"id":"11111111-1111-1111-1111-111111111111","vin":"TESTVIN0000000001","make":"BMW","model":"M135i",
+          "layout":{"slots":[{"source":"0C","style":"Analog","look":"B"},{"source":"05","style":"Arc","look":"C"}],"count":2},
+          "ranges":{"0C":{"min":0,"max":8000,"normalLow":0,"normalHigh":6500,"redline":7000},
+                    "05":{"min":40,"max":130,"normalLow":90,"normalHigh":105,"redline":115},
+                    "5C":{"min":-40,"max":215,"normalLow":-40,"normalHigh":215,"redline":215},
+                    "boost":{"min":-100,"max":150,"normalLow":-100,"normalHigh":100,"redline":125}}},
+         {"id":"22222222-2222-2222-2222-222222222222","make":"Mazda","model":"MX-5",
+          "layout":{"slots":[{"source":"0D","style":"Digital"}],"count":1},"ranges":{}}]
+        """#
+        defaults.set(Data(old.utf8), forKey: "carProfiles.v2")
+        defaults.set("22222222-2222-2222-2222-222222222222", forKey: "carProfiles.lastUsed")
+
+        let profiles = CarProfiles(defaults: defaults)
+        #expect(profiles.loadProblem == nil)
+        #expect(profiles.all.count == 2)
+        let bmw = try #require(profiles.all.first), mazda = try #require(profiles.all.last)
+        #expect(bmw.id == UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        #expect(bmw.vin == "TESTVIN0000000001" && bmw.name == "BMW M135i")
+        #expect(bmw.layout == GaugeLayout(slots: [GaugeSlot(source: .sensor(.rpm), style: .analog, look: .race),
+                                                  GaugeSlot(source: .sensor(.coolantTemp), style: .arc, look: .aftermarket)], count: 2))
+        // RPM unchanged; the others converted: max = old redline, target = middle of the old normal band, none if it was all green.
+        #expect(bmw.ranges == [
+            "0C": GaugeRange(min: 0, max: 8000, rpm: RPMZones(normalLow: 0, normalHigh: 6500, redline: 7000)),
+            "05": GaugeRange(min: 40, max: 115, target: 97.5),
+            "5C": GaugeRange(min: -40, max: 215),
+            "boost": GaugeRange(min: -100, max: 125, target: 0),
+        ])
+        #expect(mazda.id == UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        #expect(mazda.vin == nil && mazda.name == "Mazda MX-5" && mazda.ranges.isEmpty)
+        #expect(mazda.layout == GaugeLayout(slots: [GaugeSlot(source: .sensor(.speed), style: .digital)], count: 1))
+        #expect(profiles.active == mazda)
+
+        // The next save writes the new format; reading it again gives the same cars.
+        profiles.update(bmw.id) { $0.model = "M135i" }
+        #expect(String(decoding: defaults.data(forKey: "carProfiles.v2") ?? Data(), as: UTF8.self).contains("\"target\":97.5"))
+        #expect(CarProfiles(defaults: defaults).all == profiles.all)
+    }
+
+    @Test func savedCarsThatCannotBeReadAreNeverOverwritten() throws {
+        let defaults = freshDefaults()
+        let unreadable = Data(#"[{"id":"not a uuid","make":"BMW"}]"#.utf8)
+        defaults.set(unreadable, forKey: "carProfiles.v2")
+
+        let profiles = CarProfiles(defaults: defaults)
+        #expect(profiles.all.isEmpty)
+        #expect(profiles.loadProblem?.hasPrefix("Saved cars could not be read") == true)
+        // Changes work for this run but never reach the storage.
+        let car = try #require(profiles.add(make: "Mazda", model: "MX-5"))
+        profiles.update(car.id) { $0.layout.count = 2 }
+        profiles.delete(car.id)
+        #expect(defaults.data(forKey: "carProfiles.v2") == unreadable)
+        // The scanner writes it to the log once.
+        let scanner = BluetoothScanner(defaults: defaults)
+        #expect(scanner.log.filter { $0.contains("Saved cars could not be read") }.count == 1)
+        #expect(defaults.data(forKey: "carProfiles.v2") == unreadable)
+    }
+
     @Test func nothingSavedBeforeMeansNoCars() {
         #expect(CarProfiles(defaults: freshDefaults()).all.isEmpty)
     }

@@ -136,6 +136,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         FileManager.default.createFile(atPath: logFileURL.path(), contents: nil)
         logFile = try? FileHandle(forWritingTo: logFileURL)
         super.init()
+        if let problem = profiles.loadProblem { addLog(problem) }
         // A loop waiting because none of the old gauges could be asked looks at the new ones.
         profiles.onChange = { [weak self] in self?.wakeStateWaiter() }
         // queue: nil delivers delegate callbacks on the main queue.

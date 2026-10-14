@@ -16,26 +16,34 @@ nonisolated enum GaugeColor: Equatable {
     }
 }
 
-/// A sensor's scale on the gauges, always in the sensor's internal unit (°C, kPa, km/h).
-/// Blue below `normalLow`, green to yellow across the normal band, orange halfway to the redline, red from `redline`.
-nonisolated struct GaugeRange: Codable, Equatable {
-    var min: Double
-    var max: Double
+/// RPM's zones (only RPM has them): blue below `normalLow`, green across the normal band, yellow from `normalHigh`,
+/// orange halfway to the redline, red from `redline`. The race dash shift lights run from `normalHigh` to `redline`.
+nonisolated struct RPMZones: Codable, Equatable {
     var normalLow: Double
     var normalHigh: Double
     var redline: Double
+}
+
+/// A sensor's scale on the gauges, always in the sensor's internal unit (°C, kPa, km/h).
+/// RPM has `rpm` zones. Every other source may have a `target`: blue at min, pure green at the target,
+/// then yellow, orange and red exactly at max. No target = all green.
+nonisolated struct GaugeRange: Equatable {
+    var min: Double
+    var max: Double
+    /// Every source except RPM: where the gauge is pure green. nil = all green.
+    var target: Double?
+    /// RPM only; nil for every other source.
+    var rpm: RPMZones?
 
     /// RPM and coolant: the owner's values. Every other sensor gets the whole range its formula can give
-    /// (no made-up engine limits): normal = all of it, redline = max.
+    /// and no target (no made-up engine limits): all green.
     static func standard(for sensor: Sensor) -> GaugeRange {
         switch sensor {
-        case .rpm: return GaugeRange(min: 0, max: 7000, normalLow: 0, normalHigh: 6000, redline: 6500)
-        case .coolantTemp: return GaugeRange(min: 40, max: 130, normalLow: 90, normalHigh: 105, redline: 115)
+        case .rpm: return GaugeRange(min: 0, max: 7000, rpm: RPMZones(normalLow: 0, normalHigh: 6000, redline: 6500))
+        case .coolantTemp: return GaugeRange(min: 40, max: 115, target: 95)
         default:
             // Every formula grows with its bytes: all 0x00 = lowest value, all 0xFF = highest.
-            let low = sensor.decode([0, 0]) ?? 0
-            let high = sensor.decode([255, 255]) ?? 0
-            return GaugeRange(min: low, max: high, normalLow: low, normalHigh: high, redline: high)
+            return GaugeRange(min: sensor.decode([0, 0]) ?? 0, max: sensor.decode([255, 255]) ?? 0)
         }
     }
 
@@ -44,20 +52,58 @@ nonisolated struct GaugeRange: Codable, Equatable {
     static func standard(for source: GaugeSource) -> GaugeRange {
         switch source {
         case .sensor(let sensor): standard(for: sensor)
-        case .boost: GaugeRange(min: -101, max: 154, normalLow: -101, normalHigh: 154, redline: 154)
+        case .boost: GaugeRange(min: -101, max: 154)
         }
     }
 
-    /// Why this range cannot be saved, or nil when it can: min ≤ normalLow ≤ normalHigh ≤ redline ≤ max, and min < max.
-    /// Equal neighbours are allowed: normalLow = min means no blue (RPM), normalHigh = redline = max means no orange or red.
+    /// Keeps only what `source` uses: RPM its zones (the default ones if missing) and no target; every other source no zones.
+    /// A range saved before targets (five values) on a source other than RPM arrives with zones and is converted:
+    /// max = the old redline (red stays where it was), target = the middle of the old normal band,
+    /// or no target when that band was the whole scale (it was all green).
+    func fitted(to source: GaugeSource) -> GaugeRange {
+        if source == .sensor(.rpm) {
+            return GaugeRange(min: min, max: max, rpm: rpm ?? Self.standard(for: source).rpm)
+        }
+        guard let old = rpm else { return GaugeRange(min: min, max: max, target: target) }
+        let wholeScale = old.normalLow <= min && old.normalHigh >= max
+        // A redline at the min would leave an empty scale: keep the old max then.
+        return GaugeRange(min: min, max: old.redline > min ? old.redline : max,
+                          target: wholeScale ? nil : (old.normalLow + old.normalHigh) / 2)
+    }
+
+    /// Why this range cannot be saved, or nil when it can. Always min < max.
+    /// RPM: min ≤ normalLow ≤ normalHigh ≤ redline ≤ max (equal neighbours allowed: normalLow = min means no blue).
+    /// Others: min ≤ target ≤ max.
     var problem: String? {
         if min >= max { return "Min must be below max." }
-        if normalLow < min { return "Normal low can't be below min." }
-        if normalHigh < normalLow { return "Normal high can't be below normal low." }
-        if redline < normalHigh { return "Redline can't be below normal high." }
-        if redline > max { return "Redline can't be above max." }
+        if let rpm {
+            if rpm.normalLow < min { return "Normal low can't be below min." }
+            if rpm.normalHigh < rpm.normalLow { return "Normal high can't be below normal low." }
+            if rpm.redline < rpm.normalHigh { return "Redline can't be below normal high." }
+            if rpm.redline > max { return "Redline can't be above max." }
+        }
+        if let target {
+            if target < min { return "Target can't be below min." }
+            if target > max { return "Target can't be above max." }
+        }
         return nil
     }
+
+    // Temporary: the colors and the range editor still use the five values; they move to target and zones next.
+    init(min: Double, max: Double, target: Double? = nil, rpm: RPMZones? = nil) {
+        self.min = min
+        self.max = max
+        self.target = target
+        self.rpm = rpm
+    }
+
+    init(min: Double, max: Double, normalLow: Double, normalHigh: Double, redline: Double) {
+        self.init(min: min, max: max, rpm: RPMZones(normalLow: normalLow, normalHigh: normalHigh, redline: redline))
+    }
+
+    var normalLow: Double { rpm?.normalLow ?? target ?? min }
+    var normalHigh: Double { rpm?.normalHigh ?? target ?? max }
+    var redline: Double { rpm?.redline ?? max }
 
     /// Where `value` sits on the scale: 0 = min, 1 = max, clamped.
     func fraction(_ value: Double) -> Double {
@@ -92,13 +138,34 @@ nonisolated struct GaugeRange: Codable, Equatable {
 
     /// The same range in the chosen units, for the labels on screen.
     func converted(for sensor: Sensor, _ units: Units) -> GaugeRange {
-        let c = { sensor.displayValue($0, units) }
-        return GaugeRange(min: c(min), max: c(max), normalLow: c(normalLow), normalHigh: c(normalHigh), redline: c(redline))
+        mapped { sensor.displayValue($0, units) }
     }
 
     /// The opposite of `converted`: a range typed in the chosen units, back in the internal unit.
     func convertedBack(for sensor: Sensor, _ units: Units) -> GaugeRange {
-        let c = { sensor.internalValue($0, units) }
-        return GaugeRange(min: c(min), max: c(max), normalLow: c(normalLow), normalHigh: c(normalHigh), redline: c(redline))
+        mapped { sensor.internalValue($0, units) }
+    }
+
+    /// Every value through `c`: min, max, target and the zones.
+    private func mapped(_ c: (Double) -> Double) -> GaugeRange {
+        GaugeRange(min: c(min), max: c(max), target: target.map(c),
+                   rpm: rpm.map { RPMZones(normalLow: c($0.normalLow), normalHigh: c($0.normalHigh), redline: c($0.redline)) })
+    }
+}
+
+/// Saved as `min`, `max` and, when set, `target` and `rpm`. A range saved before targets has five flat values
+/// (`min`, `max`, `normalLow`, `normalHigh`, `redline`): it loads with those as zones, and `fitted(to:)` converts it
+/// once the source is known.
+nonisolated extension GaugeRange: Codable {
+    private enum CodingKeys: String, CodingKey { case min, max, target, rpm }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let zones = try container.decodeIfPresent(RPMZones.self, forKey: .rpm)
+        self.init(min: try container.decode(Double.self, forKey: .min),
+                  max: try container.decode(Double.self, forKey: .max),
+                  target: try container.decodeIfPresent(Double.self, forKey: .target),
+                  // The old flat values have RPMZones' own key names, so they decode straight from this level.
+                  rpm: zones ?? (try? RPMZones(from: decoder)))
     }
 }
