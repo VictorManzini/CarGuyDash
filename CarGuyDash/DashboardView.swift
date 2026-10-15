@@ -18,6 +18,8 @@ struct DashboardView: View {
     @State private var openTests = UserDefaults.standard.bool(forKey: "openTests")
     /// Screenshots: `-openSensorRange 05` opens the active car's range editor for that source (PID or "boost").
     @State private var openSensorRange = UserDefaults.standard.string(forKey: "openSensorRange").flatMap(GaugeSource.init(rawValue:))
+    /// Screenshots: `-openHomePreview A` opens that candidate home screen (`HomeLabView`).
+    @State private var openHomePreview = UserDefaults.standard.string(forKey: "openHomePreview")
     #endif
 
     /// Landscape iPhones are short, so the page buttons sit in two columns there.
@@ -58,6 +60,7 @@ struct DashboardView: View {
         .navigationDestination(isPresented: $openGaugeLab) { GaugeLabView(scanner: scanner) }
         .navigationDestination(isPresented: $openSettings) { SettingsView(unitSettings: unitSettings, scanner: scanner) }
         .navigationDestination(isPresented: $openTests) { ContentView(scanner: scanner) }
+        .navigationDestination(item: $openHomePreview) { HomeLabView(scanner: scanner, direction: $0) }
         .task {
             // Simulator screenshots in landscape (it cannot be rotated without the Simulator window): `-forceLandscape YES`.
             guard UserDefaults.standard.bool(forKey: "forceLandscape"),
