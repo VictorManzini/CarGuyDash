@@ -92,7 +92,7 @@ extension GaugeRange {
 // MARK: - Looks
 
 /// What one look changes: the materials, the ink and the analog dial's proportions (the values tried in the Gauge lab).
-private struct FinishSpec {
+struct FinishSpec {
     /// Bezel thickness as a fraction of the radius; its color at the top (lit) and at the bottom.
     let bezel: Double
     let bezelTop: Color
@@ -114,7 +114,7 @@ extension GaugeFinish {
     /// A: matte black face, thin satin-chrome bezel, thin white ink, orange-red needle.
     /// B: big condensed numbers, high contrast, LED blocks, shift lights on RPM.
     /// C: deep black face, thick dark-metal bezel, backlit white ink, red peak marker, domed glass.
-    fileprivate var spec: FinishSpec {
+    var spec: FinishSpec {
         switch self {
         case .oem:
             FinishSpec(bezel: 0.05, bezelTop: Color(white: 0.82), bezelBottom: Color(white: 0.3),

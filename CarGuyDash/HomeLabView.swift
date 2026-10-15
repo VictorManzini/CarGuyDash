@@ -3,10 +3,10 @@ import SwiftUI
 
 /// Debug only: candidate home screens, so the owner can compare them before the real Dashboard changes.
 /// Each one is drawn for a fixed state; it only reads the active car (name, first gauge, its range). The buttons do nothing.
-/// Screenshots: `-openHomePreview A` (B) and `-homePreview.state off` (searching, ready, reconnecting).
+/// Screenshots: `-openHomePreview A` (B, C) and `-homePreview.state off` (searching, ready, reconnecting).
 struct HomeLabView: View {
     let scanner: BluetoothScanner
-    /// "A" or "B".
+    /// "A", "B" or "C".
     let direction: String
     @AppStorage("homePreview.state") private var stateName = "off"
     @State private var unitSettings = UnitSettings()
@@ -16,6 +16,7 @@ struct HomeLabView: View {
         Group {
             switch direction {
             case "B": raceDash
+            case "C": startButton
             default: cockpit
             }
         }
@@ -204,6 +205,98 @@ struct HomeLabView: View {
         .buttonStyle(PressStyle())
         // Its own height (the minimum, or more for big text), not whatever space is left.
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - C · Start button
+
+    /// C: an engine start button for Connect / Disconnect, its ring in the state's color, then Gauges (lit when ready)
+    /// and the page tiles.
+    private var startButton: some View {
+        let name = Text(carName).font(.title.weight(.bold)).fontDesign(.rounded).lineLimit(1).minimumScaleFactor(0.7)
+        let button = VStack(spacing: 12) {
+            StartButton(finish: scanner.layout.visibleSlots[0].look, label: isDisconnected ? "Connect" : "Disconnect",
+                        ring: statusColor, busy: [.searching, .connecting, .reconnecting].contains(state))
+                .frame(maxWidth: 240)
+            statusLabel
+        }
+        let ready = state == .ready
+        let gauges = Button {} label: {
+            HStack(spacing: 12) {
+                Image(systemName: "gauge.with.dots.needle.67percent").font(.title2)
+                Text("Gauges").font(.title3.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right").font(.headline).opacity(0.6)
+            }
+            .foregroundStyle(ready ? .black : GaugeLook.primary)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(ready ? AnyShapeStyle(GaugeColor.green.color) : AnyShapeStyle(.regularMaterial),
+                        in: .rect(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(PressStyle())
+
+        return Group {
+            if wide {
+                HStack(spacing: 32) {
+                    button
+                    VStack(spacing: 12) {
+                        name
+                        Spacer(minLength: 0)
+                        gauges
+                        pageTiles
+                    }
+                }
+            } else {
+                VStack(spacing: 16) {
+                    name
+                    Spacer(minLength: 0)
+                    button
+                    Spacer(minLength: 0)
+                    gauges
+                    pageTiles
+                }
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 1), value: state)
+    }
+}
+
+/// C: a round push-start button. The bezel and the face are the given look's (as on its round gauges),
+/// inside them a ring in the state's color; the power symbol pulses while busy (not with Reduce Motion).
+private struct StartButton: View {
+    let finish: GaugeFinish
+    let label: String
+    let ring: Color
+    let busy: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let spec = finish.spec
+        Button {} label: {
+            GeometryReader { geo in
+                let r = min(geo.size.width, geo.size.height) / 2
+                let bezel = max(6, r * spec.bezel * 1.5)
+                ZStack {
+                    Circle().fill(LinearGradient(colors: [spec.bezelTop, spec.bezelBottom], startPoint: .top, endPoint: .bottom))
+                    Circle()
+                        .fill(RadialGradient(colors: [spec.faceCenter, spec.faceEdge], center: .center, startRadius: 0, endRadius: r))
+                        .padding(bezel)
+                    Circle().strokeBorder(ring, lineWidth: max(3, r * 0.035)).padding(bezel + r * 0.07)
+                    VStack(spacing: r * 0.06) {
+                        Image(systemName: "power")
+                            .font(.system(size: r * 0.34, weight: .semibold))
+                            .symbolEffect(.pulse, isActive: busy && !reduceMotion)
+                        Text(label.uppercased()).font(.headline.weight(.bold)).tracking(1.5)
+                    }
+                    .foregroundStyle(GaugeLook.primary)
+                }
+                .frame(width: 2 * r, height: 2 * r)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+            .aspectRatio(1, contentMode: .fit)
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(label)
     }
 }
 
