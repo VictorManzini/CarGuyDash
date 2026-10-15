@@ -3,10 +3,10 @@ import SwiftUI
 
 /// Debug only: candidate home screens, so the owner can compare them before the real Dashboard changes.
 /// Each one is drawn for a fixed state; it only reads the active car (name, first gauge, its range). The buttons do nothing.
-/// Screenshots: `-openHomePreview A` (B to E) and `-homePreview.state off` (searching, ready, reconnecting).
+/// Screenshots: `-openHomePreview A` (B to F) and `-homePreview.state off` (searching, ready, reconnecting).
 struct HomeLabView: View {
     let scanner: BluetoothScanner
-    /// "A" to "E".
+    /// "A" to "F".
     let direction: String
     @AppStorage("homePreview.state") private var stateName = "off"
     @State private var unitSettings = UnitSettings()
@@ -19,6 +19,7 @@ struct HomeLabView: View {
             case "C": startButton
             case "D": nativeButton
             case "E": carKey
+            case "F": accessories
             default: cockpit
             }
         }
@@ -375,6 +376,61 @@ struct HomeLabView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 1), value: state)
+    }
+
+    // MARK: - F · Home app
+
+    /// F: tiles like the Home app's accessories: the adapter and Gauges as two big ones that turn light when on
+    /// (connected / ready), the other pages as small ones; the car's name as a large title.
+    private var accessories: some View {
+        let ready = state == .ready
+        let big: CGFloat = wide ? 120 : 150
+        let name = Text(carName).font(.largeTitle.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
+        // As in the Home app the subtitle is only the state; what a tap does goes to VoiceOver.
+        let adapter = accessory("OBD adapter", state.rawValue, "power", on: !isDisconnected, color: statusColor, height: big)
+            .accessibilityHint(isDisconnected ? "Connects" : "Disconnects")
+        let gauges = accessory("Gauges", "\(scanner.layout.count) gauges" + (ready ? " · Live" : ""),
+                               "gauge.with.dots.needle.67percent", on: ready, color: GaugeColor.green.color, height: big)
+        let sensors = accessory("Sensors", "Coming soon", "list.bullet.rectangle", on: false).disabled(true)
+        let tests = accessory("Tests", "Log", "checklist", on: false)
+        let settings = accessory("Settings", "Cars, units", "gearshape", on: false)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            name
+            Spacer(minLength: 0)
+            if wide {
+                HStack(spacing: 12) { adapter; gauges; sensors; tests; settings }
+            } else {
+                HStack(spacing: 12) { adapter; gauges }
+                HStack(spacing: 12) { sensors; tests; settings }
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 1), value: state)
+    }
+
+    /// F: a Home app accessory tile: the symbol in a circle on top, title and subtitle at the bottom.
+    /// On: a light tile with dark ink and the symbol's circle in `color`.
+    private func accessory(_ title: String, _ subtitle: String, _ systemImage: String, on: Bool, color: Color = .clear,
+                           height: CGFloat = 96) -> some View {
+        Button {} label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(on ? .black : GaugeLook.primary)
+                    .frame(width: 40, height: 40)
+                    .background(on ? color : Color(white: 0.25), in: .circle)
+                Spacer(minLength: 8)
+                Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
+                Text(subtitle).font(.subheadline).opacity(0.6).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(on ? .black : GaugeLook.primary)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
+            .background(on ? AnyShapeStyle(Color(white: 0.92)) : AnyShapeStyle(.regularMaterial),
+                        in: .rect(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(PressStyle())
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
