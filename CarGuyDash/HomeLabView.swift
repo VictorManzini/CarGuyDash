@@ -3,10 +3,10 @@ import SwiftUI
 
 /// Debug only: candidate home screens, so the owner can compare them before the real Dashboard changes.
 /// Each one is drawn for a fixed state; it only reads the active car (name, first gauge, its range). The buttons do nothing.
-/// Screenshots: `-openHomePreview A` (B, C, D) and `-homePreview.state off` (searching, ready, reconnecting).
+/// Screenshots: `-openHomePreview A` (B to E) and `-homePreview.state off` (searching, ready, reconnecting).
 struct HomeLabView: View {
     let scanner: BluetoothScanner
-    /// "A" to "D".
+    /// "A" to "E".
     let direction: String
     @AppStorage("homePreview.state") private var stateName = "off"
     @State private var unitSettings = UnitSettings()
@@ -18,6 +18,7 @@ struct HomeLabView: View {
             case "B": raceDash
             case "C": startButton
             case "D": nativeButton
+            case "E": carKey
             default: cockpit
             }
         }
@@ -75,16 +76,18 @@ struct HomeLabView: View {
         return StyledGauge(style: slot.style, finish: slot.look, reading: reading)
     }
 
-    private func tile(_ title: String, _ systemImage: String, caption: String? = nil) -> some View {
+    /// `lit`: green with black ink (Gauges once ready).
+    private func tile(_ title: String, _ systemImage: String, caption: String? = nil, lit: Bool = false) -> some View {
         Button {} label: {
             VStack(spacing: 6) {
                 Image(systemName: systemImage).font(.title2).symbolRenderingMode(.hierarchical)
                 Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 if let caption { Text(caption).font(.caption2).foregroundStyle(.secondary) }
             }
-            .foregroundStyle(GaugeLook.primary)
+            .foregroundStyle(lit ? .black : GaugeLook.primary)
             .frame(maxWidth: .infinity, minHeight: 72)
-            .background(.regularMaterial, in: .rect(cornerRadius: 16, style: .continuous))
+            .background(lit ? AnyShapeStyle(GaugeColor.green.color) : AnyShapeStyle(.regularMaterial),
+                        in: .rect(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(PressStyle())
     }
@@ -302,6 +305,72 @@ struct HomeLabView: View {
                     Spacer(minLength: 0)
                     gauges
                     pageTiles
+                }
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 1), value: state)
+    }
+
+    // MARK: - E · Car key
+
+    /// E: the car as a Wallet-style card (a generic car symbol, the name, the masked VIN, the state),
+    /// Connect under it, then a 2×2 grid with Gauges lit when ready.
+    private var carKey: some View {
+        let card = VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top) {
+                Image(systemName: "car.side.fill").font(.system(size: 40)).foregroundStyle(GaugeLook.primary)
+                Spacer()
+                statusLabel
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: .capsule)
+            }
+            Spacer(minLength: 16)
+            Text(carName).font(.title.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
+            Text(scanner.profiles.active?.vinLabel ?? "No car yet").font(.footnote.monospaced()).foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // A bank card's proportions.
+        .aspectRatio(1.586, contentMode: .fit)
+        .background(LinearGradient(colors: [Color(white: 0.25), Color(white: 0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: .rect(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.1)))
+        let connect = Button {} label: {
+            Label(isDisconnected ? "Connect" : "Disconnect", systemImage: "power")
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(isDisconnected ? .accentColor : .red)
+        let grid = Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+            GridRow {
+                tile("Gauges", "gauge.with.dots.needle.67percent", lit: state == .ready)
+                tile("Sensors", "list.bullet.rectangle", caption: "Coming soon").disabled(true)
+            }
+            GridRow {
+                tile("Tests", "checklist")
+                tile("Settings", "gearshape")
+            }
+        }
+
+        return Group {
+            if wide {
+                HStack(spacing: 24) {
+                    card
+                    VStack(spacing: 12) {
+                        Spacer(minLength: 0)
+                        connect
+                        grid
+                    }
+                }
+            } else {
+                VStack(spacing: 16) {
+                    card
+                    Spacer(minLength: 0)
+                    connect
+                    grid
                 }
             }
         }
