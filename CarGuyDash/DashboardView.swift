@@ -23,15 +23,31 @@ struct DashboardView: View {
     @State private var openHomePreview = UserDefaults.standard.string(forKey: "openHomePreview")
     #endif
 
+    /// Landscape iPhones are short: the card goes on the left, the buttons on the right.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     var body: some View {
         // Scrolls only when it does not fit (large Dynamic Type); otherwise the card sits on top, the buttons at the bottom.
         GeometryReader { geo in
             ScrollView {
-                VStack(spacing: 16) {
-                    carCard
-                    Spacer(minLength: 0)
-                    connectButton
-                    pageGrid
+                Group {
+                    if verticalSizeClass == .compact {
+                        HStack(spacing: 24) {
+                            carCard
+                            VStack(spacing: 12) {
+                                Spacer(minLength: 0)
+                                connectButton
+                                pageGrid
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 16) {
+                            carCard
+                            Spacer(minLength: 0)
+                            connectButton
+                            pageGrid
+                        }
+                    }
                 }
                 .padding()
                 .frame(minHeight: geo.size.height)
