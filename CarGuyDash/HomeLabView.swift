@@ -3,10 +3,10 @@ import SwiftUI
 
 /// Debug only: candidate home screens, so the owner can compare them before the real Dashboard changes.
 /// Each one is drawn for a fixed state; it only reads the active car (name, first gauge, its range). The buttons do nothing.
-/// Screenshots: `-openHomePreview A` (B, C) and `-homePreview.state off` (searching, ready, reconnecting).
+/// Screenshots: `-openHomePreview A` (B, C, D) and `-homePreview.state off` (searching, ready, reconnecting).
 struct HomeLabView: View {
     let scanner: BluetoothScanner
-    /// "A", "B" or "C".
+    /// "A" to "D".
     let direction: String
     @AppStorage("homePreview.state") private var stateName = "off"
     @State private var unitSettings = UnitSettings()
@@ -17,6 +17,7 @@ struct HomeLabView: View {
             switch direction {
             case "B": raceDash
             case "C": startButton
+            case "D": nativeButton
             default: cockpit
             }
         }
@@ -258,6 +259,94 @@ struct HomeLabView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 1), value: state)
+    }
+
+    // MARK: - D · Native button
+
+    /// D: C's idea in plain iOS clothes: a big round system button with an Activity-style ring for the state,
+    /// then a Gauges capsule that turns green when ready, and the page tiles.
+    private var nativeButton: some View {
+        let name = Text(carName).font(.largeTitle.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
+        let button = VStack(spacing: 12) {
+            PowerButton(label: isDisconnected ? "Connect" : "Disconnect", ring: statusColor, state: state)
+                .frame(maxWidth: 220)
+            statusLabel
+        }
+        let ready = state == .ready
+        let gauges = Button {} label: {
+            Label("Gauges", systemImage: "gauge.with.dots.needle.67percent")
+                .font(.title3.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(ready ? GaugeColor.green.color : Color(white: 0.2))
+        .foregroundStyle(ready ? .black : GaugeLook.primary)
+
+        return Group {
+            if wide {
+                HStack(spacing: 32) {
+                    button
+                    VStack(spacing: 12) {
+                        name
+                        Spacer(minLength: 0)
+                        gauges
+                        pageTiles
+                    }
+                }
+            } else {
+                VStack(spacing: 16) {
+                    name
+                    Spacer(minLength: 0)
+                    button
+                    Spacer(minLength: 0)
+                    gauges
+                    pageTiles
+                }
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 1), value: state)
+    }
+}
+
+/// D: a round system button (material, power symbol, label) with a ring like the Activity rings: none when off,
+/// a short arc that turns while searching or reconnecting (still with Reduce Motion), full when ready.
+private struct PowerButton: View {
+    let label: String
+    let ring: Color
+    let state: ConnectionState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var turning = false
+
+    var body: some View {
+        let busy = [.searching, .connecting, .reconnecting].contains(state)
+        let fill: CGFloat = state == .ready ? 1 : busy ? 0.25 : 0
+        Button {} label: {
+            ZStack {
+                Circle().fill(.regularMaterial)
+                Circle().stroke(GaugeLook.unlit, lineWidth: 12).padding(10)
+                Circle()
+                    .trim(from: 0, to: fill)
+                    .stroke(ring, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                    .rotationEffect(.degrees(turning ? 270 : -90))
+                    .padding(10)
+                VStack(spacing: 8) {
+                    Image(systemName: "power")
+                        .font(.system(size: 52, weight: .semibold))
+                        .foregroundStyle(state == .disconnected ? Color.accentColor : ring)
+                    Text(label).font(.headline)
+                }
+                .foregroundStyle(GaugeLook.primary)
+            }
+            .aspectRatio(1, contentMode: .fit)
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(label)
+        .task(id: busy) {
+            turning = false
+            guard busy, !reduceMotion else { return }
+            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { turning = true }
+        }
     }
 }
 
