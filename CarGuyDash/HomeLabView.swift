@@ -3,10 +3,10 @@ import SwiftUI
 
 /// Debug only: candidate home screens, so the owner can compare them before the real Dashboard changes.
 /// Each one is drawn for a fixed state; it only reads the active car (name, first gauge, its range). The buttons do nothing.
-/// Screenshots: `-openHomePreview A` and `-homePreview.state off` (searching, ready, reconnecting).
+/// Screenshots: `-openHomePreview A` (B) and `-homePreview.state off` (searching, ready, reconnecting).
 struct HomeLabView: View {
     let scanner: BluetoothScanner
-    /// "A" (more to come).
+    /// "A" or "B".
     let direction: String
     @AppStorage("homePreview.state") private var stateName = "off"
     @State private var unitSettings = UnitSettings()
@@ -15,6 +15,7 @@ struct HomeLabView: View {
     var body: some View {
         Group {
             switch direction {
+            case "B": raceDash
             default: cockpit
             }
         }
@@ -133,6 +134,107 @@ struct HomeLabView: View {
                     connect
                     pageTiles
                 }
+            }
+        }
+    }
+
+    // MARK: - B · Race dash
+
+    /// B: ten status lights, the car's name big and condensed, numbered blocks with Gauges as the big orange one.
+    private var raceDash: some View {
+        let name = Text(carName.uppercased())
+            .font(.largeTitle.weight(.heavy).width(.condensed))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+        let status = Text(state.rawValue.uppercased())
+            .font(.subheadline.weight(.bold).width(.condensed))
+            .tracking(1.5)
+            .foregroundStyle(statusColor)
+        let gauges = block("01", "Gauges", "gauge.with.dots.needle.67percent", fill: GaugeColor.orange.color, ink: .black,
+                           height: wide ? 110 : 136)
+        let sensors = block("02", "Sensors", "list.bullet.rectangle", caption: "Soon").disabled(true)
+        let tests = block("03", "Tests", "checklist")
+        let settings = block("04", "Settings", "gearshape")
+        let connect = block("", isDisconnected ? "Connect" : "Disconnect", "power",
+                            fill: isDisconnected ? .accentColor : GaugeColor.red.color, ink: .white)
+
+        return Group {
+            if wide {
+                VStack(spacing: 12) {
+                    StatusLights(state: state, color: statusColor)
+                    HStack(alignment: .firstTextBaseline) { name; Spacer(); status }
+                    Spacer(minLength: 0)
+                    HStack(spacing: 12) { gauges; sensors; tests; settings; connect }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    StatusLights(state: state, color: statusColor)
+                    name.padding(.top, 8)
+                    status
+                    Spacer(minLength: 0)
+                    gauges
+                    HStack(spacing: 12) { sensors; tests }
+                    HStack(spacing: 12) { settings; connect }
+                }
+            }
+        }
+    }
+
+    /// A race dash block: number and symbol on top, the title in heavy condensed capitals at the bottom.
+    private func block(_ number: String, _ title: String, _ systemImage: String, caption: String? = nil,
+                       fill: Color? = nil, ink: Color = GaugeLook.primary, height: CGFloat? = nil) -> some View {
+        Button {} label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(number).font(.caption.weight(.bold).width(.condensed)).monospacedDigit()
+                    Spacer()
+                    Image(systemName: systemImage).font(.title3)
+                }
+                Spacer(minLength: 8)
+                Text(title.uppercased()).font(.title3.weight(.heavy).width(.condensed)).lineLimit(1).minimumScaleFactor(0.7)
+                if let caption {
+                    Text(caption.uppercased()).font(.caption2.weight(.bold).width(.condensed)).tracking(1).opacity(0.6)
+                }
+            }
+            .foregroundStyle(ink)
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: height ?? (wide ? 110 : 96), alignment: .topLeading)
+            .background(fill.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.regularMaterial), in: .rect(cornerRadius: 6))
+        }
+        .buttonStyle(PressStyle())
+        // Its own height (the minimum, or more for big text), not whatever space is left.
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// B: ten lights, like a shift-light strip: dark when off, the first four lit while searching, all lit when ready
+/// and while reconnecting, which blinks (steady with Reduce Motion). The state's text says the same, so it is hidden from VoiceOver.
+private struct StatusLights: View {
+    let state: ConnectionState
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dimmed = false
+
+    var body: some View {
+        let lit = switch state {
+        case .ready, .reconnecting: 10
+        case .connecting: 7
+        case .searching: 4
+        case .bluetoothOff, .disconnected: 0
+        }
+        HStack(spacing: 6) {
+            ForEach(0..<10, id: \.self) { index in
+                Capsule().fill(index < lit ? color : GaugeLook.unlit).frame(height: 10)
+            }
+        }
+        .opacity(dimmed ? 0.3 : 1)
+        .accessibilityHidden(true)
+        .task(id: state) {
+            dimmed = false
+            guard state == .reconnecting, !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(0.5))
+                withAnimation(.easeInOut(duration: 0.15)) { dimmed.toggle() }
             }
         }
     }
