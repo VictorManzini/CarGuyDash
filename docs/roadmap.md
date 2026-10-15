@@ -40,7 +40,7 @@ Phase 3 tested in the car on 2026-10-13 (auto polling, live gauges, RPM latency)
 - [x] Settings: units (°C/°F, bar/psi/kPa, km/h/mph) — simple screen from the Dashboard gear button
 - [ ] Check the units on screen (can be done at home with the simulated adapter)
 - [ ] Settings: connect on launch, redline alerts
-- [ ] Home screen with more personality (current one works but is generic)
+- [x] Home screen with more personality: car key card (name, masked VIN, state), Connect / Disconnect, 2×2 page grid with Gauges green when ready, portrait and landscape (checked on the simulator, untested in car)
 
 ## Phase 4 — Locked iPhone
 - [x] Background BLE reading with the iPhone locked (bluetooth-central)
