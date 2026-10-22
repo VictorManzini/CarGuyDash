@@ -52,6 +52,7 @@ struct GatekeeperTests {
 
     /// No other path may write to the adapter: `writeValue(` must appear exactly once in the app,
     /// inside BluetoothLink, which only BluetoothScanner.send(_:) calls after the gatekeeper check.
+    /// An L2CAP channel would be a second way to send bytes, so it must not appear at all.
     @Test func onlyOneWritePathExists() throws {
         let appFolder = URL(filePath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -59,11 +60,14 @@ struct GatekeeperTests {
             .resolvingSymlinksInPath()
         let files = try #require(FileManager.default.enumerator(at: appFolder, includingPropertiesForKeys: nil))
         var writes: [String] = []
+        var l2cap: [String] = []
         for case let url as URL in files where url.pathExtension == "swift" {
             let source = try String(contentsOf: url, encoding: .utf8)
             let count = source.components(separatedBy: "writeValue(").count - 1
             writes += Array(repeating: url.lastPathComponent, count: count)
+            if source.contains("openL2CAPChannel") { l2cap.append(url.lastPathComponent) }
         }
         #expect(writes == ["BluetoothScanner.swift"])
+        #expect(l2cap.isEmpty)
     }
 }

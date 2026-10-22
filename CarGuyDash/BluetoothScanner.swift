@@ -10,8 +10,8 @@ protocol AdapterLink {
     func write(_ line: String)
 }
 
-/// The real adapter, over Bluetooth.
-struct BluetoothLink: AdapterLink {
+/// The real adapter, over Bluetooth. Private to this file, so no other code can build one and write past the gatekeeper.
+private struct BluetoothLink: AdapterLink {
     let peripheral: CBPeripheral
     let characteristic: CBCharacteristic
 
@@ -110,8 +110,13 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     private var centralManager: CBCentralManager!
     private var adapter: CBPeripheral?
     private var link: AdapterLink?
+    #if DEBUG
     /// Set while the simulated adapter is in use; the real Bluetooth is then ignored.
     private(set) var simulator: SimulatedAdapter?
+    #else
+    /// The simulated adapter is Debug only; a Release build always talks to the real one.
+    private let simulator: AdapterLink? = nil
+    #endif
     private var notifyCharacteristic: CBCharacteristic?
     private var responseBuffer = ""
 
@@ -447,6 +452,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
 
     // MARK: - Helpers
 
+    #if DEBUG
     /// Stops looking for the real adapter and talks to the simulated one instead.
     /// Returns it so tests can see what it received.
     /// It waits for Start; tests pass `pollsWhenReady: true` to make it start polling at Ready like the real adapter.
@@ -476,6 +482,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             await prepare()
         }
     }
+    #endif
 
     /// The app went to the background or came back. The measurement window under way is closed first,
     /// so each line belongs to one phase only.
