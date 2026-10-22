@@ -16,6 +16,41 @@ struct LogTests {
         #expect(scanner.log.allSatisfy { $0.wholeMatch(of: /\d{2}:\d{2}:\d{2}\.\d{3} .+/) != nil })
     }
 
+    @Test func longLinesAreCut() async {
+        let scanner = await scanner()
+        scanner.addLog(String(repeating: "x", count: 10_000))
+        let last = scanner.log.last ?? ""
+        #expect(last.hasSuffix("… (cut)"))
+        #expect(last.count < BluetoothScanner.maxLogLineLength + 30) // time + cut marker
+    }
+
+    @Test func theScreenLogAndTheFileStopGrowing() async throws {
+        let scanner = await scanner()
+        let line = String(repeating: "x", count: BluetoothScanner.maxLogLineLength)
+        let lines = BluetoothScanner.maxLogFileBytes / BluetoothScanner.maxLogLineLength + 10
+        for _ in 0..<lines { scanner.addLog(line) }
+        #expect(scanner.log.count == BluetoothScanner.maxLogLines)
+        // The counter, not the file: tests running alongside may already have deleted the file as an old log.
+        #expect(scanner.logFileBytes > BluetoothScanner.maxLogFileBytes - 1000)
+        #expect(scanner.logFileBytes <= BluetoothScanner.maxLogFileBytes)
+        try? FileManager.default.removeItem(at: scanner.logFileURL)
+    }
+
+    @Test func onlyTheNewestLogFilesAreKept() throws {
+        let folder = URL.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let logs = (1...15).map { String(format: "log-2026-10-%02d_12-00-00.txt", $0) }
+        for name in logs + ["notes.txt", "log-old.json"] {
+            FileManager.default.createFile(atPath: folder.appending(path: name).path(), contents: nil)
+        }
+
+        BluetoothScanner.removeOldLogs(in: folder)
+
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: folder.path()))
+        #expect(left == Set(logs.suffix(BluetoothScanner.keptLogFiles) + ["notes.txt", "log-old.json"]))
+    }
+
     @Test func aSimulatedDropLogsTheStateChanges() async throws {
         let scanner = await scanner()
         scanner.simulateDisconnect(for: .milliseconds(200))

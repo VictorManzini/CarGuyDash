@@ -48,11 +48,25 @@ A **read-only** iOS app that reads a BMW M135i F20 (N55 engine) through an ELM32
 - **Values dictionary:** key = sensor enum with `String` raw value (the PID code), carrying name and unit; value = number + reading timestamp.
 - **No reading:** connection in `reconnecting` → every gauge shows "Stand By" (digital: "Stand By" text instead of the number; analog: near-transparent grey layer in the gauge's shape + red "Stand By" in the center). A single sensor not responding while connected → "N/A".
 
+## Security
+
+Review done on 2026-10-22, before Phase 6 (Publish). No internet; the app talks to the car through the BLE adapter, stores data on the iPhone, and the code is public.
+
+- **Assets:** the car (nothing may write to it), the user's data (VIN, car profiles), the app's stability.
+- **Entry points:** BLE answers from the adapter, the BLE advertisement (device name), UserDefaults and the log files, the public repository.
+- **Attackers:** a fake BLE device nearby, a malicious or buggy adapter, someone holding the unlocked iPhone, someone reading the repository or a shared log.
+- **Write path:** every command goes through `Gatekeeper.check` (exact allow-list, plain ASCII only, `ATSH`/`ATPP` always blocked) inside `BluetoothScanner.send`. `writeValue(` exists once, in the file-private `BluetoothLink`; a test fails if a second one or `openL2CAPChannel` appears. Every command is a constant in the code; none comes from the user or the adapter.
+- **Fake adapter:** the app connects to the first device whose name contains `IOS-Vlink`, so a nearby device with that name could show fake gauge values or a fake VIN. It cannot write to the car through the app. Pinning the adapter is postponed to "support other OBD-II BLE adapters" (owner's decision).
+- **Adapter answers:** answers over 4 KB are dropped and a timeout clears a half answer (`fix/response-buffer-limit`, untested in the car). Log lines are cut at 300 characters, the screen log keeps 5000 lines, each log file stops at 5 MB, and only the 10 newest log files are kept.
+- **Data:** the VIN stays in UserDefaults as is (owner's decision). It never reaches the log, with or without spaces (`VIN.isIn`). Scanning logs only the adapter, never other nearby devices.
+- **Release build:** the simulated adapter, the labs and the launch arguments are Debug only (checked with `strings` on a Release build).
+- **Not the app's to fix:** the adapter has no PIN. While the app is not connected, any phone nearby can connect to it and send anything to the car. Unplug it when parked (see `README.md`).
+
 ## Current state
 
 - `CarGuyDash` project created; runs on the simulator and on a physical iPhone.
 - Mac removed from supported destinations; iPad still included (decide during layout).
-- `NSBluetoothAlwaysUsageDescription` key added: "Car Guy Dash uses Bluetooth to connect to your car's OBD-II adapter." [TO CONFIRM]
+- `NSBluetoothAlwaysUsageDescription` (build setting `INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription`): "Connect OBD-II adaptor to the car". The only permission; the only background mode is `bluetooth-central`.
 - `.gitignore` created. `bluetooth-scanner`, `feature/car-test-mode`, `feature/sensors`, `feature/fake-adapter`, `feature/live-data`, `feature/gauges`, `feature/reconnect`, `feature/connect-button`, `feature/stand-by`, `feature/car-profile`, `feature/supported-sensors`, `feature/background-ble`, `feature/stand-by-size`, `feature/ignition-off`, `feature/units` and `feature/boost` are merged into `main`. One branch per task (`feature/<short-name>`), see `CLAUDE.md`.
 - Bundle ID `com.victormanzini.CarGuyDash` (the placeholder `devplaceholder.XMDPYH4G.CarGuyDash` was not available). Signed with a free Personal Team: the app installed on the iPhone expires after 7 days.
 - Adapter: advertises as `IOS-Vlink`, reports `ELM327 v2.3`. UART service `18F0` (notify `2AF0`, write `2AF1` with write and writeWithoutResponse). Echo is on by default. AT smoke test (`ATZ`, `ATI`) passed on the iPhone; OBD reading tested in the car (see Next steps 4 and 6).

@@ -87,7 +87,9 @@ struct LiveDataTests {
         clock += 10
         scanner.logUnreadable("7E81014490201574241\r\r>", for: .rpm)
         #expect(lines().count == 3) // the VIN never reaches the log
-        #expect(!scanner.log.contains { $0.contains("490201") })
+        scanner.logUnreadable("7E8 10 14 49 02 01 57 42 41\r\r>", for: .oilTemp) // with spaces too
+        #expect(lines().count == 3)
+        #expect(!scanner.log.contains { $0.contains("490201") || $0.contains("49 02 01") })
     }
 
     @Test func pollingStops() async throws {

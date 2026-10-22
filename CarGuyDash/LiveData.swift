@@ -80,10 +80,10 @@ extension BluetoothScanner {
     static let unreadableLogEvery: TimeInterval = 10
 
     /// Logs the raw answer that gave no valid value (e.g. "NO DATA"), at most once per sensor every `unreadableLogEvery`.
-    /// An answer with "490201" (the VIN) is never logged. Timeouts are already logged by `run`.
+    /// An answer with the VIN ("490201", see `VIN.isIn`) is never logged. Timeouts are already logged by `run`.
     func logUnreadable(_ response: String, for sensor: Sensor) {
         let now = liveData.now()
-        guard !response.contains("490201"),
+        guard !VIN.isIn(response),
               unreadableLoggedAt[sensor].map({ now.timeIntervalSince($0) >= Self.unreadableLogEvery }) ?? true else { return }
         unreadableLoggedAt[sensor] = now
         addLog("No value from 01\(sensor.rawValue): \(response.debugDescription)")

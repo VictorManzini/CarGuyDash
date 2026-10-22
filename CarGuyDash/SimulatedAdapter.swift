@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 /// Pretends to be the ELM327 in the car, so the app can be developed without it.
@@ -103,3 +104,4 @@ final class SimulatedAdapter: AdapterLink {
         return [UInt8(raw / 256), UInt8(raw % 256)]
     }
 }
+#endif
