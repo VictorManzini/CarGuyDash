@@ -39,6 +39,21 @@ struct GatekeeperTests {
         #expect(Gatekeeper.check(command) == .blocked)
     }
 
+    /// Upper-casing would turn these into allowed commands ("atı" -> "ATI", "atſp0" -> "ATSP0"),
+    /// so anything that is not plain ASCII is blocked before it is normalized.
+    @Test(arguments: [
+        "atı", "atſp0", "AT\u{212A}", "01\u{212A}C", "ATZ\u{301}", "０１０Ｃ", "ＡＴＺ", "01 0C\u{00A0}", "ATZ\u{200B}",
+    ])
+    func nonASCIIIsBlocked(_ command: String) {
+        #expect(Gatekeeper.check(command) == .blocked)
+    }
+
+    @Test func upperCasingAloneWouldLetThemThrough() {
+        #expect(Gatekeeper.normalize("atı") == "ATI")
+        #expect(Gatekeeper.normalize("atſp0") == "ATSP0")
+        #expect(Character("\u{212A}") == Character("K"))
+    }
+
     /// The longest allowed command has 5 characters, so any random command
     /// of 6 or more characters (without spaces) must be blocked.
     @Test func randomLongCommandsAreBlocked() {

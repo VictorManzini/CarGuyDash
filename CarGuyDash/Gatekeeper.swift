@@ -23,6 +23,9 @@ nonisolated enum Gatekeeper {
     }
 
     static func check(_ command: String) -> Verdict {
+        // Only plain ASCII: Unicode upper-casing and equivalence can turn other characters into allowed ones
+        // ("ı" -> "I", "ſ" -> "S", the Kelvin sign equals "K").
+        guard command.allSatisfy(\.isASCII) else { return .blocked }
         let normalized = normalize(command)
         if blockedPrefixes.contains(where: { normalized.hasPrefix($0) }) { return .blocked }
         if allowedATCommands.contains(normalized) { return .allowed }
