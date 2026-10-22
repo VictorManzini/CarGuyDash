@@ -197,10 +197,9 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         rssi RSSI: NSNumber
     ) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        addLog("Found: \(name ?? "(no name)") RSSI: \(RSSI) dBm")
-
+        // Other devices are not logged: their names (e.g. someone's AirPods) would end up in shared logs.
         guard adapter == nil, simulator == nil, let name, name.contains("IOS-Vlink") else { return }
-        addLog("Adapter found, connecting to \(name)")
+        addLog("Adapter found, connecting to \(name) (RSSI \(RSSI) dBm)")
         central.stopScan()
         state = .connecting
         adapter = peripheral // CoreBluetooth drops the connection if nobody keeps a reference.
@@ -277,7 +276,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         responseBuffer = ""
         if pendingResponse == nil {
             // A late answer to 0902 (service 09 PID 02 = "490201...") is the VIN: keep it out of the log.
-            addLog("Late response (ignored): \(response.contains("490201") ? "(VIN, hidden)" : response.debugDescription)")
+            addLog("Late response (ignored): \(VIN.isIn(response) ? "(VIN, hidden)" : response.debugDescription)")
         }
         finishCommand(with: response)
     }
@@ -487,12 +486,25 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         addLog(phase == .background ? "App went to the background" : "App back in the foreground")
     }
 
+    /// Longest log line kept (characters after the time); longer ones are cut, so a garbage answer cannot flood the log.
+    static let maxLogLineLength = 300
+    /// Lines kept on screen (and in Copy); the oldest go first. The file keeps them up to `maxLogFileBytes`.
+    static let maxLogLines = 5000
+    /// Size of one launch's log file; after it, lines only go to the screen.
+    static let maxLogFileBytes = 5_000_000
+    @ObservationIgnored private var logFileBytes = 0
+
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
     func addLog(_ line: String) {
-        let line = timeFormatter.string(from: .now) + " " + line
+        let text = line.count > Self.maxLogLineLength ? String(line.prefix(Self.maxLogLineLength)) + "… (cut)" : line
+        let line = timeFormatter.string(from: .now) + " " + text
         print(line)
         log.append(line)
-        logFile?.write(Data((line + "\n").utf8))
+        if log.count > Self.maxLogLines { log.removeFirst(log.count - Self.maxLogLines) }
+        let data = Data((line + "\n").utf8)
+        guard logFileBytes + data.count <= Self.maxLogFileBytes else { return }
+        logFileBytes += data.count
+        logFile?.write(data)
     }
 
     /// Called after every polling attempt. One valid reading ends the silence; the silence starts when

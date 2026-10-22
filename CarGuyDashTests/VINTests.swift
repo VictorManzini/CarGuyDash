@@ -34,6 +34,21 @@ struct VINTests {
         }
     }
 
+    @Test func aVINAnswerIsSpottedWithOrWithoutSpaces() {
+        #expect(VIN.isIn(good))
+        #expect(VIN.isIn("7E8 10 14 49 02 01 54 45 53\r>"))
+        #expect(VIN.isIn("7e8101449 02 01544553"))
+        #expect(!VIN.isIn("7E804410C1AF8\r>"))
+        #expect(!VIN.isIn("NO DATA\r\r>"))
+    }
+
+    @Test func aLateVINWithSpacesStaysOutOfTheLog() async {
+        let scanner = BluetoothScanner()
+        await scanner.useSimulatedAdapter()
+        scanner.receive("7E8 10 14 49 02 01 54 45 53\r7E8 21 54 56 49 4E 30 30 30\r>") // nobody is waiting for it
+        #expect(scanner.log.last?.hasSuffix("Late response (ignored): (VIN, hidden)") == true)
+    }
+
     @Test func theSimulatedAdapterAnswersWithTheFakeVIN() async throws {
         let scanner = BluetoothScanner()
         await scanner.useSimulatedAdapter()

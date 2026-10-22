@@ -16,6 +16,25 @@ struct LogTests {
         #expect(scanner.log.allSatisfy { $0.wholeMatch(of: /\d{2}:\d{2}:\d{2}\.\d{3} .+/) != nil })
     }
 
+    @Test func longLinesAreCut() async {
+        let scanner = await scanner()
+        scanner.addLog(String(repeating: "x", count: 10_000))
+        let last = scanner.log.last ?? ""
+        #expect(last.hasSuffix("… (cut)"))
+        #expect(last.count < BluetoothScanner.maxLogLineLength + 30) // time + cut marker
+    }
+
+    @Test func theScreenLogAndTheFileStopGrowing() async throws {
+        let scanner = await scanner()
+        let line = String(repeating: "x", count: BluetoothScanner.maxLogLineLength)
+        let lines = BluetoothScanner.maxLogFileBytes / BluetoothScanner.maxLogLineLength + 10
+        for _ in 0..<lines { scanner.addLog(line) }
+        #expect(scanner.log.count == BluetoothScanner.maxLogLines)
+        let size = try FileManager.default.attributesOfItem(atPath: scanner.logFileURL.path())[.size] as? Int ?? 0
+        #expect(size > 0 && size <= BluetoothScanner.maxLogFileBytes)
+        try? FileManager.default.removeItem(at: scanner.logFileURL)
+    }
+
     @Test func aSimulatedDropLogsTheStateChanges() async throws {
         let scanner = await scanner()
         scanner.simulateDisconnect(for: .milliseconds(200))

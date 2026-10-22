@@ -30,4 +30,9 @@ nonisolated enum VIN {
         }
         return vin.count == 17 ? vin : nil
     }
+
+    /// True if the response holds a VIN answer ("49 02 01"), with or without spaces: such a response is never logged.
+    static func isIn(_ response: String) -> Bool {
+        response.uppercased().filter { $0 != " " }.contains("490201")
+    }
 }
