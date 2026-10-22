@@ -135,6 +135,7 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
         logFileURL = URL.documentsDirectory.appending(path: "log-\(formatter.string(from: .now)).txt")
         FileManager.default.createFile(atPath: logFileURL.path(), contents: nil)
         logFile = try? FileHandle(forWritingTo: logFileURL)
+        Self.removeOldLogs(in: .documentsDirectory)
         super.init()
         if let problem = profiles.loadProblem { addLog(problem) }
         // A loop waiting because none of the old gauges could be asked looks at the new ones.
@@ -492,7 +493,18 @@ final class BluetoothScanner: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     static let maxLogLines = 5000
     /// Size of one launch's log file; after it, lines only go to the screen.
     static let maxLogFileBytes = 5_000_000
-    @ObservationIgnored private var logFileBytes = 0
+    /// Bytes written to this launch's file. Readable by tests.
+    @ObservationIgnored private(set) var logFileBytes = 0
+    /// Log files kept, this launch's included (one per launch, background relaunches too).
+    static let keptLogFiles = 10
+
+    /// Deletes all but the newest `keptLogFiles` log files. The names hold the date, so name order is time order.
+    static func removeOldLogs(in folder: URL) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        let logs = files.filter { $0.lastPathComponent.hasPrefix("log-") && $0.pathExtension == "txt" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+        for old in logs.dropFirst(keptLogFiles) { try? FileManager.default.removeItem(at: old) }
+    }
 
     /// Appends a line to the screen log and the log file (and the console, for SweetPad).
     func addLog(_ line: String) {
