@@ -46,8 +46,11 @@ enum GaugeLook {
     static func motion(for sensor: Sensor) -> Animation { sensor == .rpm ? rpmMotion : motion }
 
     /// The value text size every Digital, Bar and Arc gauge of one grid shares, from the cell's size:
-    /// a fifth of the cell's smaller side once the name line (about 24 pt with its gap) is taken off.
-    static func valueSize(cell: CGSize) -> CGFloat { max(0, min(cell.width, cell.height - 24)) * 0.2 }
+    /// a fifth of the cell's smaller side once the name line is taken off.
+    static func valueSize(cell: CGSize) -> CGFloat { max(0, min(cell.width, cell.height - nameLine)) * 0.2 }
+
+    /// The name above each gauge: 13 pt text (about 15.5 pt tall) plus its gap, with 2 pt to spare.
+    static let nameLine: CGFloat = 26
 
     /// In a grid the Digital's number may outgrow the shared size, up to this many times it.
     static let digitalGrowth: CGFloat = 1.5
@@ -278,7 +281,7 @@ private struct AnimatedCanvas: View, Animatable {
     }
 }
 
-/// Every style: the gauge sits on the bottom of its space, the name always `GaugeLook.gap` below it,
+/// Every style: the name on top, the gauge always `GaugeLook.gap` below it and sitting on the top of its space,
 /// so names in one row line up whatever the styles.
 private struct GaugeCell<Content: View>: View {
     let reading: GaugeReading
@@ -286,13 +289,13 @@ private struct GaugeCell<Content: View>: View {
 
     var body: some View {
         VStack(spacing: GaugeLook.gap) {
-            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             Text((reading.name ?? reading.sensor.name).uppercased())
-                .font(.system(size: 11, weight: .medium))
-                .tracking(1.2) // small text: a little looser
+                .font(.system(size: 13, weight: .medium))
+                .tracking(0.8) // small text: a little looser; tighter than before so long names stay big
                 .foregroundStyle(GaugeLook.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.6)
+            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 }
