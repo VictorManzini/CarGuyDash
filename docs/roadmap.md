@@ -54,3 +54,10 @@ Phase 3 tested in the car on 2026-10-13 (auto polling, live gauges, RPM latency)
 
 ## Phase 6 — Publish
 - [ ] Push to GitHub as open source (no VIN, no logs)
+
+## Backlog (added 2026-10-15, in priority order)
+- [x] Security review: threat model + audit (BLE input from the adapter, Gatekeeper as the safety boundary, data stored on the phone, logs/Share, public repo hygiene). Hardening merged 2026-10-22; response buffer cap (fix/response-buffer-limit) waits for the car test
+- [ ] Support other OBD-II BLE adapters (not only Vgate Vlink): generic service/characteristic discovery, adapter picker in Settings, ELM327 clone quirks. Includes pinning the chosen adapter (B1)
+- [ ] Gauges: sensor name above the gauge instead of below, slightly bigger
+- [ ] Color themes the user can choose
+- [ ] App logo / icon
